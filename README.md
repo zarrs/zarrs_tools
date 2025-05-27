@@ -4,7 +4,7 @@
 ![msrv](https://img.shields.io/crates/msrv/zarrs_tools)
 [![build](https://github.com/zarrs/zarrs_tools/actions/workflows/ci.yml/badge.svg)](https://github.com/zarrs/zarrs_tools/actions/workflows/ci.yml)
 
-Various tools for creating and manipulating [Zarr v3](https://zarr.dev) data with the [zarrs](https://github.com/LDeakin/zarrs) rust crate.
+Various tools for creating and manipulating [Zarr v3](https://zarr.dev) data with the [zarrs](https://github.com/zarrs/zarrs) rust crate.
 
 A changelog can be found [here](https://github.com/zarrs/zarrs_tools/blob/main/CHANGELOG.md).
 
@@ -26,7 +26,7 @@ See [docs/](https://github.com/zarrs/zarrs_tools/blob/main/docs/) for tool docum
 - `zarrs_benchmark_read_sync` (feature `benchmark`): benchmark the zarrs sync API.
 - `zarrs_benchmark_read_async` (feature `benchmark`): benchmark the zarrs async API.
 
-See the [LDeakin/zarr_benchmarks](https://github.com/LDeakin/zarr_benchmarks) repository for benchmarks of `zarrs` against other Zarr V3 implementations.
+See the [zarrs/zarr_benchmarks](https://github.com/zarrs/zarr_benchmarks) repository for benchmarks of `zarrs` against other Zarr V3 implementations.
 
 ## Install
 
