@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2025-05-27
+
 ### Changed
 - Bump `zarrs` to 0.20.0
 - Bump `opendal` to 0.53.3
@@ -268,7 +270,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
  - Initial public release
 
-[unreleased]: https://github.com/zarrs/zarrs_tools/compare/v0.7.2...HEAD
+[unreleased]: https://github.com/zarrs/zarrs_tools/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.3
 [0.7.2]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.2
 [0.7.1]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.1
 [0.7.0]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.0
