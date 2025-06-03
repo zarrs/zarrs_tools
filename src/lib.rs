@@ -271,6 +271,10 @@ pub fn get_array_builder(
     array_builder
 }
 
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
 #[derive(Parser, Debug, Clone, Default, Serialize, Deserialize)]
 
 pub struct ZarrReencodingArgs {
@@ -318,6 +322,11 @@ pub struct ZarrReencodingArgs {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(short, long, verbatim_doc_comment, value_delimiter = ',')]
     pub shard_shape: Option<Vec<u64>>,
+
+    /// If true, the sharding of the input will be ignored.
+    #[serde(skip_serializing_if = "is_false")]
+    #[arg(long, verbatim_doc_comment)]
+    pub ignore_input_sharding: bool,
 
     /// Array to array codecs.
     ///
@@ -389,6 +398,7 @@ impl ZarrReencodingArgs {
             || self.separator.is_some()
             || self.chunk_shape.is_some()
             || self.shard_shape.is_some()
+            || self.ignore_input_sharding
             || self.array_to_array_codecs.is_some()
             || self.array_to_bytes_codec.is_some()
             || self.bytes_to_bytes_codecs.is_some()
@@ -438,7 +448,11 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
         let bytes_to_bytes_codecs = codec_chain.bytes_to_bytes_codecs().to_vec();
         (
             chunk_shape,
-            Some(shard_shape),
+            if encoding_args.ignore_input_sharding {
+                None
+            } else {
+                Some(shard_shape)
+            },
             array_to_array_codecs,
             array_to_bytes_codec,
             bytes_to_bytes_codecs,
