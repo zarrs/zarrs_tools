@@ -567,11 +567,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         let array_output = output_builder.build(output_store.into(), &format!("/{}", i))?;
         bar.set_prefix(format!("{i} {:?}", array_output.shape()));
 
-        // Scale factor (inverse of downsample factor, accounting for actual changes)
-        let real_downsample_factor = std::iter::zip(array_input.shape(), array_output.shape())
-            .map(|(i, o)| i / o)
-            .collect_vec();
-        std::iter::zip(&mut relative_scale, &real_downsample_factor).for_each(
+        // Scale factor (inverse of downsample factor)
+        std::iter::zip(&mut relative_scale, &downsample_factor).for_each(
             |(scale, downsample_factor)| {
                 *scale *= *downsample_factor as f32;
             },

@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Bump `zarrs` to 0.20.1
 
+### Fixed
+- `zarrs_ome`: use a fixed relative scale factor for all levels
+
 ## [0.7.3] - 2025-05-27
 
 ### Changed
