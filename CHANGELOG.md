@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4] - 2025-06-05
+
 ### Added
 - Add `--ignore_input_sharding` to `zarrs_{reencode,filter,ome}`
   - Ignores the outer sharding codec (if present) when copying input encoding
@@ -280,7 +282,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
  - Initial public release
 
-[unreleased]: https://github.com/zarrs/zarrs_tools/compare/v0.7.3...HEAD
+[unreleased]: https://github.com/zarrs/zarrs_tools/compare/v0.7.4...HEAD
+[0.7.4]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.4
 [0.7.3]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.3
 [0.7.2]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.2
 [0.7.1]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.1
