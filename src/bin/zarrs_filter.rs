@@ -139,7 +139,7 @@ fn get_path(
 
 fn main() -> std::process::ExitCode {
     if let Err(err) = run() {
-        println!("{}", err);
+        println!("{err}");
         std::process::ExitCode::FAILURE
     } else {
         std::process::ExitCode::SUCCESS

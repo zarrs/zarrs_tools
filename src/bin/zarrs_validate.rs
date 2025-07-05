@@ -79,9 +79,9 @@ fn get_storage(path: &str) -> anyhow::Result<ReadableListableStorage> {
 
 fn main() {
     match try_main() {
-        Ok(success) => println!("{}", success),
+        Ok(success) => println!("{success}"),
         Err(err) => {
-            eprintln!("{}", err);
+            eprintln!("{err}");
             std::process::exit(1);
         }
     }
