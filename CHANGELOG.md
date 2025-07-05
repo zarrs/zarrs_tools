@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `zarrs_ome`: validate argument dimensionality against input array
+
 ## [0.7.4] - 2025-06-05
 
 ### Added

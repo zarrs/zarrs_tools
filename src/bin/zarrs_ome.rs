@@ -1,10 +1,10 @@
 use std::{
-    error::Error,
     hash::Hash,
     num::NonZeroU64,
     path::{Path, PathBuf},
 };
 
+use anyhow::anyhow;
 use clap::Parser;
 use half::{bf16, f16};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -281,7 +281,7 @@ fn progress_callback(stats: ProgressStats, bar: &ProgressBar) {
     ));
 }
 
-fn run() -> Result<(), Box<dyn Error>> {
+fn run() -> Result<(), anyhow::Error> {
     // Parse command line arguments
     let cli = Cli::parse();
 
@@ -300,7 +300,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             if level == 0 {
                 bar.set_prefix(format!("0 {:?}", array_in.shape()));
             } else {
-                bar.set_prefix(format!("{}", level));
+                bar.set_prefix(format!("{level}"));
             }
             bar
         })
@@ -374,6 +374,48 @@ fn run() -> Result<(), Box<dyn Error>> {
         group.attributes_mut().append(array0.attributes_mut()); // this clears array0 attributes
         group.attributes_mut().remove_entry("_zarrs");
         array0.store_metadata()?;
+    }
+
+    // Check inputs
+    if let Some(downsample_factor) = &cli.downsample_factor {
+        if downsample_factor.len() != array0.dimensionality() {
+            return Err(anyhow!(
+                "downsample factor {downsample_factor:?} length does not match the array dimensionality {}",
+                array0.dimensionality()
+            ));
+        }
+    }
+    if let Some(physical_size) = &cli.physical_size {
+        if physical_size.len() != array0.dimensionality() {
+            return Err(anyhow!(
+                "physical size {physical_size:?} length does not match the array dimensionality {}",
+                array0.dimensionality()
+            ));
+        }
+    }
+    if let Some(physical_units) = &cli.physical_units {
+        if physical_units.len() != array0.dimensionality() {
+            return Err(anyhow!(
+                "physical units {physical_units:?} length does not match the array dimensionality {}",
+                array0.dimensionality()
+            ));
+        }
+    }
+    if let Some(gaussian_sigma) = &cli.gaussian_sigma {
+        if gaussian_sigma.len() != array0.dimensionality() {
+            return Err(anyhow!(
+                "gaussian sigma {gaussian_sigma:?} length does not match the array dimensionality {}",
+                array0.dimensionality()
+            ));
+        }
+    }
+    if let Some(gaussian_kernel_half_size) = &cli.gaussian_kernel_half_size {
+        if gaussian_kernel_half_size.len() != array0.dimensionality() {
+            return Err(anyhow!(
+                "gaussian kernel half size {gaussian_kernel_half_size:?} length does not match the array dimensionality {}",
+                array0.dimensionality()
+            ));
+        }
     }
 
     // Initialise multiscales metadata
@@ -564,7 +606,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         // Output
         let output_path = cli.output.join(i.to_string());
         let output_store = FilesystemStore::new(&cli.output)?;
-        let array_output = output_builder.build(output_store.into(), &format!("/{}", i))?;
+        let array_output = output_builder.build(output_store.into(), &format!("/{i}"))?;
         bar.set_prefix(format!("{i} {:?}", array_output.shape()));
 
         // Scale factor (inverse of downsample factor)
@@ -765,7 +807,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
 fn main() -> std::process::ExitCode {
     if let Err(err) = run() {
-        println!("{}", err);
+        println!("{err}");
         std::process::ExitCode::FAILURE
     } else {
         std::process::ExitCode::SUCCESS
