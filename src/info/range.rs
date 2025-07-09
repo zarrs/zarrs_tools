@@ -105,7 +105,7 @@ pub fn calculate_range_t<
     t_max: T,
     chunk_limit: usize,
 ) -> Result<(T, T), ArrayError> {
-    let chunks = ArraySubset::new_with_shape(array.chunk_grid_shape().unwrap());
+    let chunks = ArraySubset::new_with_shape(array.chunk_grid_shape().clone());
 
     let chunk_min_max = |chunk_indices: Vec<u64>| {
         // TODO: Codec concurrent limit

@@ -46,7 +46,7 @@ pub fn calculate_histogram_t<
     max: f64,
     chunk_limit: usize,
 ) -> Result<(Vec<f64>, Vec<u64>), ArrayError> {
-    let chunks = ArraySubset::new_with_shape(array.chunk_grid_shape().unwrap());
+    let chunks = ArraySubset::new_with_shape(array.chunk_grid_shape().clone());
 
     let chunk_incr_histogram = |histogram: Result<Vec<u64>, ArrayError>,
                                 chunk_indices: Vec<u64>| {

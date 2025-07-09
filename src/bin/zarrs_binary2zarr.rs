@@ -119,7 +119,7 @@ fn stdin_to_array(
     let array_shape_n = *array_shape.first().unwrap();
     let chunk_shape = array
         .chunk_grid()
-        .chunk_shape(&vec![0; array.chunk_grid().dimensionality()], array.shape())
+        .chunk_shape(&vec![0; array.chunk_grid().dimensionality()])
         .unwrap()
         .expect("lowest indices should have a chunk shape");
     let block_shape_n = *chunk_shape.first().unwrap();

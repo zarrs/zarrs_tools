@@ -2736,9 +2736,7 @@ dependencies = [
 
 [[package]]
 name = "zarrs"
-version = "0.21.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55683fb371f421cfc39325cdc98fed9bb6e9c869114827e60c875dd8f7a4aee0"
+version = "0.22.0-dev"
 dependencies = [
  "async-generic",
  "async-lock",
@@ -2778,8 +2776,6 @@ dependencies = [
 [[package]]
 name = "zarrs_data_type"
 version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3d6f4333c80a511fc8ed7f84e255fcd43d38c1c752d0e0078172046e25fc839"
 dependencies = [
  "derive_more",
  "half",
@@ -2792,9 +2788,7 @@ dependencies = [
 
 [[package]]
 name = "zarrs_filesystem"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cc06dd18a47729eedaa4dd2c1427458e97772186ef6155b474159ae9fe02c23"
+version = "0.3.0"
 dependencies = [
  "bytes",
  "derive_more",
@@ -2811,8 +2805,6 @@ dependencies = [
 [[package]]
 name = "zarrs_metadata"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b5144f87eeac14201a7d20d2cd0787598b1ae6175f4b4a384444e71b6ede004"
 dependencies = [
  "derive_more",
  "half",
@@ -2824,9 +2816,7 @@ dependencies = [
 
 [[package]]
 name = "zarrs_metadata_ext"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ecad49f2a566b676292b155c4f0831a0034fee49f09ec7a1aeb895a96b98219"
+version = "0.2.0"
 dependencies = [
  "derive_more",
  "half",
@@ -2842,9 +2832,7 @@ dependencies = [
 
 [[package]]
 name = "zarrs_opendal"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d3d95af5def9139419e4e351d9b8c47270475d7ce19014b3fcf29acf7722f08"
+version = "0.8.0"
 dependencies = [
  "async-trait",
  "futures",
@@ -2855,8 +2843,6 @@ dependencies = [
 [[package]]
 name = "zarrs_plugin"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bfe664c4f15bc85b60cbca70d1fc48906b9cd71a6870fb3ae753f5a3550c7db"
 dependencies = [
  "thiserror 2.0.12",
 ]
@@ -2864,17 +2850,13 @@ dependencies = [
 [[package]]
 name = "zarrs_registry"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "286838805c24e5cdd5e65464ee70c34ae66daa3576d01ca3a87f8e1a758223ee"
 dependencies = [
  "regex",
 ]
 
 [[package]]
 name = "zarrs_storage"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0908f7fe5a8b2e181d25b3fe9a6f0aa314dcc9a2e3e65ed9cf8b7a0ae77486d7"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "auto_impl",
