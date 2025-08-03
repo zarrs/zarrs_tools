@@ -4,11 +4,10 @@ use std::sync::Arc;
 
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
-use zarrs::array::Array;
 use zarrs::filesystem::{FilesystemStore, FilesystemStoreOptions};
 use zarrs::storage::{
     ListableStorageTraits, ReadableListableStorage, ReadableWritableListableStorageTraits,
-    ReadableWritableStorageTraits, StorePrefix, WritableStorageTraits,
+    StorePrefix, WritableStorageTraits,
 };
 use zarrs_tools::{
     do_reencode, get_array_builder_reencode,
@@ -170,7 +169,7 @@ fn main() -> anyhow::Result<()> {
     zarrs::config::global_config_mut().set_validate_checksums(!args.ignore_checksums);
 
     let storage_in = get_storage(&args.path_in)?;
-    let array_in = zarrs::array::Array::open(storage_in.clone().readable(), "/").unwrap();
+    let array_in = Arc::new(zarrs::array::Array::open(storage_in.clone().readable(), "/").unwrap());
     if args.verbose {
         println!(
             "{}",
@@ -203,7 +202,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     let (duration, duration_read, duration_write, bytes_decoded) = do_reencode(
-        &array_in,
+        array_in,
         &array_out,
         args.validate,
         args.concurrent_chunks,

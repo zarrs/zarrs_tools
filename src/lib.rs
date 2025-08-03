@@ -675,7 +675,7 @@ pub enum CacheSize {
 }
 
 pub fn do_reencode(
-    array_in: &Array<dyn ReadableStorageTraits>,
+    array_in: Arc<Array<dyn ReadableStorageTraits>>,
     array_out: &Array<dyn ReadableWritableListableStorageTraits>,
     validate: bool,
     concurrent_chunks: Option<usize>,
@@ -694,17 +694,19 @@ pub fn do_reencode(
 
     let cache: Option<Arc<dyn ChunkCache>> = match cache_size {
         CacheSize::None => None,
-        CacheSize::SizeTotal(size) => {
-            Some(Arc::new(ChunkCacheDecodedLruSizeLimit::new(array_in, size)))
-        }
+        CacheSize::SizeTotal(size) => Some(Arc::new(ChunkCacheDecodedLruSizeLimit::new(
+            array_in.clone(),
+            size,
+        ))),
         CacheSize::SizePerThread(size) => Some(Arc::new(
-            ChunkCacheDecodedLruSizeLimitThreadLocal::new(&array_in, size),
+            ChunkCacheDecodedLruSizeLimitThreadLocal::new(array_in.clone(), size),
         )),
         CacheSize::ChunksTotal(chunks) => Some(Arc::new(ChunkCacheDecodedLruChunkLimit::new(
-            &array_in, chunks,
+            array_in.clone(),
+            chunks,
         ))),
         CacheSize::ChunksPerThread(chunks) => Some(Arc::new(
-            ChunkCacheDecodedLruChunkLimitThreadLocal::new(&array_in, chunks),
+            ChunkCacheDecodedLruChunkLimitThreadLocal::new(array_in.clone(), chunks),
         )),
     };
 

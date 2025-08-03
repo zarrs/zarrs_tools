@@ -68,10 +68,11 @@ pub fn calculate_histogram_t<
         .collect();
 
     let indices = chunks.indices();
+    let n_indices = indices.len();
     let hist = indices
         .into_par_iter()
         .fold_chunks(
-            indices.len().div_ceil(chunk_limit).max(1),
+            n_indices.div_ceil(chunk_limit).max(1),
             || Ok(vec![0; n_bins]),
             chunk_incr_histogram,
         )
