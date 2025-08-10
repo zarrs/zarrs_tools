@@ -14,6 +14,7 @@ use rayon_iter_concurrent_limit::iter_concurrent_limit;
 use serde::{Deserialize, Serialize};
 use zarrs::{
     array::{
+        chunk_grid::RegularChunkGrid,
         codec::{
             array_to_bytes::sharding, ArrayCodecTraits, ArrayToBytesCodecTraits, BytesCodec, Codec,
             CodecOptionsBuilder, Crc32cCodec, NamedArrayToArrayCodec, NamedArrayToBytesCodec,
@@ -25,7 +26,7 @@ use zarrs::{
         ChunkCacheDecodedLruSizeLimit, ChunkCacheDecodedLruSizeLimitThreadLocal,
         ChunkRepresentation, CodecChain, DataType, DimensionName, FillValue, FillValueMetadataV3,
     },
-    array_subset::ArraySubset,
+    array_subset::{ArraySubset, IncompatibleDimensionalityError},
     config::global_config,
     metadata::v3::MetadataV3,
     storage::{ReadableStorageTraits, ReadableWritableListableStorageTraits},
@@ -738,15 +739,18 @@ pub fn do_reencode(
             .into_par_iter()
             .map(|chunk_indices| {
                 let chunk_subset = array_out.chunk_subset(&chunk_indices).unwrap();
-                let chunks = chunk_subset
-                    .chunks(write_shape)
-                    .expect("write shape dimensionality has been validated");
-                chunks.len()
+                chunk_subset
+                    .shape()
+                    .iter()
+                    .zip(write_shape)
+                    .map(|(s, w)| s.div_ceil(w.get()))
+                    .sum::<u64>()
             })
-            .sum::<usize>()
+            .sum::<u64>()
     } else {
-        chunks.num_elements_usize()
+        chunks.num_elements()
     };
+    let num_iterations = usize::try_from(num_iterations).unwrap();
 
     let progress = Progress::new(num_iterations, progress_callback);
 
@@ -769,7 +773,25 @@ pub fn do_reencode(
             |chunk_indices: Vec<u64>| {
                 let chunk_subset = array_out.chunk_subset(&chunk_indices).unwrap();
                 if let Some(write_shape) = &write_shape {
-                    for (_, chunk_subset_write) in &chunk_subset.chunks(write_shape)? {
+                    use zarrs::array::chunk_grid::ChunkGridTraits;
+                    let write_grid = RegularChunkGrid::new(
+                        chunk_subset.shape().to_vec(),
+                        write_shape.clone().into(),
+                    )
+                    .map_err(|_| {
+                        IncompatibleDimensionalityError::new(
+                            write_shape.len(),
+                            chunk_subset.dimensionality(),
+                        )
+                    })?;
+                    // FIXME: Add ChunkGrid iteration in `zarrs`
+                    for chunk_write in
+                        ArraySubset::new_with_shape(write_grid.grid_shape().clone()).indices()
+                    {
+                        let chunk_subset_write = write_grid
+                            .subset(&chunk_write)
+                            .expect("matching dimensionality")
+                            .expect("determinate for regular chunk grid");
                         let chunk_subset_write = chunk_subset_write.overlap(&chunk_subset)?;
                         let bytes = progress.read(|| retrieve_array_subset(&chunk_subset_write))?;
                         *bytes_decoded.lock().unwrap() += bytes.size();

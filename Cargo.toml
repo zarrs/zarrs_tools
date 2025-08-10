@@ -110,7 +110,7 @@ zarrs_storage = { path = "../zarrs/zarrs_storage" }
 zarrs_opendal = { path = "../zarrs_opendal" }
 # zarrs = { git = "https://github.com/zarrs/zarrs.git" }
 # zarrs_storage = { git = "https://github.com/zarrs/zarrs.git" }
-# zarrs_opendal = { git = "https://github.com/zarrs/zarrs.git" }
+# zarrs_opendal = { git = "https://github.com/zarrs/zarrs_opendal.git" }
 # ome_zarr_metadata = { git = "https://github.com/zarrs/rust_ome_zarr_metadata.git" }
 
 [lints.clippy]
