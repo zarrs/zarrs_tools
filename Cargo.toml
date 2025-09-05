@@ -105,12 +105,12 @@ lto = "thin"
 # x86_64-apple-darwin = "macos-12"
 
 [patch.crates-io]
-zarrs = { path = "../zarrs/zarrs" }
-zarrs_storage = { path = "../zarrs/zarrs_storage" }
-zarrs_opendal = { path = "../zarrs_opendal" }
-# zarrs = { git = "https://github.com/zarrs/zarrs.git" }
-# zarrs_storage = { git = "https://github.com/zarrs/zarrs.git" }
-# zarrs_opendal = { git = "https://github.com/zarrs/zarrs_opendal.git" }
+# zarrs = { path = "../zarrs/zarrs" }
+# zarrs_storage = { path = "../zarrs/zarrs_storage" }
+# zarrs_opendal = { path = "../zarrs_opendal" }
+zarrs = { git = "https://github.com/zarrs/zarrs.git", rev = "b9025c74" }
+zarrs_storage = { git = "https://github.com/zarrs/zarrs.git", rev = "b9025c74" }
+zarrs_opendal = { git = "https://github.com/zarrs/zarrs_opendal.git", rev = "3f22435" }
 # ome_zarr_metadata = { git = "https://github.com/zarrs/rust_ome_zarr_metadata.git" }
 
 [lints.clippy]
