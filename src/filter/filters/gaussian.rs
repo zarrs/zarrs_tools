@@ -175,7 +175,7 @@ impl FilterTraits for Gaussian {
     ) -> Result<(), FilterError> {
         assert_eq!(output.shape(), input.shape());
 
-        let chunks = ArraySubset::new_with_shape(output.chunk_grid_shape().unwrap());
+        let chunks = ArraySubset::new_with_shape(output.chunk_grid_shape().clone());
         let progress = Progress::new(chunks.num_elements_usize(), progress_callback);
 
         let chunk_limit = if let Some(chunk_limit) = self.chunk_limit {
@@ -278,13 +278,8 @@ mod tests {
     fn gaussian() -> Result<(), Box<dyn Error>> {
         let path = tempfile::TempDir::new()?;
         let store = FilesystemStore::new(path.path())?;
-        let array = ArrayBuilder::new(
-            vec![4, 4],
-            DataType::Float32,
-            vec![2, 2].try_into()?,
-            0.0f32.into(),
-        )
-        .build(store.into(), "/")?;
+        let array = ArrayBuilder::new(vec![4, 4], vec![2, 2], DataType::Float32, 0.0f32)
+            .build(store.into(), "/")?;
         let array_subset = array.subset_all();
         array.store_array_subset_elements(
             &array_subset,

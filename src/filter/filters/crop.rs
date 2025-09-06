@@ -169,7 +169,7 @@ impl FilterTraits for Crop {
     ) -> Result<(), FilterError> {
         assert_eq!(output.shape(), self.shape);
 
-        let chunks = ArraySubset::new_with_shape(output.chunk_grid_shape().unwrap());
+        let chunks = ArraySubset::new_with_shape(output.chunk_grid_shape().clone());
         let progress = Progress::new(chunks.num_elements_usize(), progress_callback);
 
         let chunk_limit = if let Some(chunk_limit) = self.chunk_limit {

@@ -6,7 +6,8 @@ use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use zarrs::filesystem::{FilesystemStore, FilesystemStoreOptions};
 use zarrs::storage::{
-    ListableStorageTraits, ReadableListableStorage, StorePrefix, WritableStorageTraits,
+    ListableStorageTraits, ReadableListableStorage, ReadableWritableListableStorageTraits,
+    StorePrefix, WritableStorageTraits,
 };
 use zarrs_tools::{
     do_reencode, get_array_builder_reencode,
@@ -168,7 +169,7 @@ fn main() -> anyhow::Result<()> {
     zarrs::config::global_config_mut().set_validate_checksums(!args.ignore_checksums);
 
     let storage_in = get_storage(&args.path_in)?;
-    let array_in = zarrs::array::Array::open(storage_in.clone(), "/").unwrap();
+    let array_in = Arc::new(zarrs::array::Array::open(storage_in.clone().readable(), "/").unwrap());
     if args.verbose {
         println!(
             "{}",
@@ -181,7 +182,8 @@ fn main() -> anyhow::Result<()> {
     let progress_callback = |stats: ProgressStats| progress_callback(stats, &bar);
     let progress_callback = ProgressCallback::new(&progress_callback);
 
-    let storage_out = Arc::new(FilesystemStore::new(args.path_out.clone()).unwrap());
+    let storage_out: Arc<dyn ReadableWritableListableStorageTraits> =
+        Arc::new(FilesystemStore::new(args.path_out.clone()).unwrap());
     storage_out.erase_prefix(&StorePrefix::root()).unwrap();
     let builder = get_array_builder_reencode(&args.encoding, &array_in, None);
     let array_out = builder.build(storage_out.clone(), "/").unwrap();
@@ -200,7 +202,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     let (duration, duration_read, duration_write, bytes_decoded) = do_reencode(
-        &array_in,
+        array_in,
         &array_out,
         args.validate,
         args.concurrent_chunks,

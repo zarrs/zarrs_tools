@@ -112,7 +112,7 @@ fn try_main() -> anyhow::Result<String> {
         );
     }
 
-    let chunks = ArraySubset::new_with_shape(array1.chunk_grid_shape().unwrap());
+    let chunks = ArraySubset::new_with_shape(array1.chunk_grid_shape().clone());
 
     let chunk_representation = array1
         .chunk_array_representation(&vec![0; array1.chunk_grid().dimensionality()])
@@ -122,7 +122,7 @@ fn try_main() -> anyhow::Result<String> {
     let (chunks_concurrent_limit, codec_concurrent_target) = calculate_chunk_and_codec_concurrency(
         concurrent_target,
         args.concurrent_chunks,
-        array1.codecs(),
+        &array1.codecs(),
         chunks.num_elements_usize(),
         &chunk_representation,
     );

@@ -618,7 +618,7 @@ fn run() -> Result<(), anyhow::Error> {
         // println!("{downsample_factor:?} -> {scale:?}");
 
         // Chunks
-        let chunks = ArraySubset::new_with_shape(array_output.chunk_grid_shape().unwrap());
+        let chunks = ArraySubset::new_with_shape(array_output.chunk_grid_shape().clone());
         let progress = Progress::new(chunks.num_elements_usize(), &progress_callback);
 
         let chunk_limit = if let Some(chunk_limit) = cli.chunk_limit {

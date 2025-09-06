@@ -140,7 +140,7 @@ impl FilterTraits for ReplaceValue {
     ) -> Result<(), FilterError> {
         assert_eq!(output.shape(), input.shape());
 
-        let chunks = ArraySubset::new_with_shape(output.chunk_grid_shape().unwrap());
+        let chunks = ArraySubset::new_with_shape(output.chunk_grid_shape().clone());
         let progress = Progress::new(chunks.num_elements_usize(), progress_callback);
 
         let value = input
