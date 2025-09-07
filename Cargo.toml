@@ -15,12 +15,6 @@ exclude = [
     "docs/*.csv"
 ]
 
-[package.metadata.wix]
-upgrade-guid = "3462955D-4AF0-49BD-9C16-BF202DB3A592"
-path-guid = "27495E21-4025-4E67-91BE-D9027E41513A"
-license = false
-eula = false
-
 [features]
 async = ["zarrs/async"] # "dep:object_store"
 benchmark = []
