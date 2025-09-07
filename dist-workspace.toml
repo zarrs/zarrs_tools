@@ -37,3 +37,4 @@ runner = "windows-latest"
 
 [dist.dependencies.apt]
 musl-tools = { version = "*", targets = ["x86_64-unknown-linux-musl"] }
+llvm-dev = { version = "*", targets = ["aarch64-pc-windows-msvc"] }
