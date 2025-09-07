@@ -36,5 +36,5 @@ container = { image = "quay.io/pypa/manylinux_2_28_x86_64", host = "x86_64-unkno
 runner = "windows-latest"
 
 [dist.dependencies.apt]
-musl-tools = { version = "*", targets = ["x86_64-unknown-linux-musl"] }
+musl-tools = { version = "*", targets = ["x86_64-unknown-linux-gnu"] }
 llvm-dev = { version = "*", targets = ["aarch64-pc-windows-msvc"] }
