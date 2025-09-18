@@ -14,21 +14,22 @@ use rayon_iter_concurrent_limit::iter_concurrent_limit;
 use serde::{Deserialize, Serialize};
 use zarrs::{
     array::{
+        chunk_grid::RegularChunkGrid,
         codec::{
             array_to_bytes::sharding, ArrayCodecTraits, ArrayToBytesCodecTraits, BytesCodec, Codec,
             CodecOptionsBuilder, Crc32cCodec, NamedArrayToArrayCodec, NamedArrayToBytesCodec,
             NamedBytesToBytesCodec, ShardingCodec,
         },
         concurrency::RecommendedConcurrency,
-        Array, ArrayBuilder, ArrayChunkCacheExt, ArrayError, ArrayShardedExt,
+        Array, ArrayBuilder, ArrayError, ArrayShardedExt, ChunkCache,
         ChunkCacheDecodedLruChunkLimit, ChunkCacheDecodedLruChunkLimitThreadLocal,
         ChunkCacheDecodedLruSizeLimit, ChunkCacheDecodedLruSizeLimitThreadLocal,
         ChunkRepresentation, CodecChain, DataType, DimensionName, FillValue, FillValueMetadataV3,
     },
-    array_subset::ArraySubset,
+    array_subset::{ArraySubset, IncompatibleDimensionalityError},
     config::global_config,
     metadata::v3::MetadataV3,
-    storage::{ReadableStorageTraits, ReadableWritableStorageTraits},
+    storage::{ReadableStorageTraits, ReadableWritableListableStorageTraits},
 };
 
 pub mod filter;
@@ -234,8 +235,8 @@ pub fn get_array_builder(
     // Create array
     let mut array_builder = ArrayBuilder::new(
         array_shape.to_vec(),
+        block_shape.clone(),
         data_type,
-        block_shape.clone().try_into().unwrap(),
         fill_value,
     );
     array_builder.dimension_names(dimension_names);
@@ -421,7 +422,8 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
     array: &Array<TStorage>,
     array_shape: Option<Vec<u64>>,
 ) -> zarrs::array::ArrayBuilder {
-    let array_to_bytes_codec = array.codecs().array_to_bytes_codec();
+    let codecs = array.codecs();
+    let array_to_bytes_codec = codecs.array_to_bytes_codec();
     let array_to_bytes_identifier = array_to_bytes_codec.identifier();
     let (
         chunk_shape,
@@ -458,7 +460,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
             bytes_to_bytes_codecs,
         )
     } else {
-        let chunk_shape = array.chunk_grid_shape().unwrap().to_vec();
+        let chunk_shape = array.chunk_grid_shape().to_vec();
         let shard_shape = None;
         let array_to_array_codecs = array.codecs().array_to_array_codecs().to_vec();
         let array_to_bytes_codec = array.codecs().array_to_bytes_codec().clone();
@@ -591,7 +593,9 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
     if let Some(attributes_append) = &encoding_args.attributes_append {
         let mut attributes_append: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(attributes_append).expect("Attributes append are invalid.");
-        array_builder.attributes.append(&mut attributes_append);
+        array_builder
+            .attributes_mut()
+            .append(&mut attributes_append);
     }
 
     if let Some(separator) = encoding_args.separator {
@@ -602,14 +606,17 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
         array_builder.shape(array_shape);
     }
 
-    if let Some(data_type) = &encoding_args.data_type {
+    let data_type = if let Some(data_type) = &encoding_args.data_type {
         let data_type = DataType::from_metadata(
             data_type,
             zarrs::config::global_config().data_type_aliases_v3(),
         )
         .unwrap();
         array_builder.data_type(data_type.clone());
-    }
+        data_type
+    } else {
+        array.data_type().clone()
+    };
 
     if let Some(dimension_names) = encoding_args.dimension_names.clone() {
         // TODO: Remove clone with zarrs 0.15.1+
@@ -618,10 +625,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
 
     if let Some(fill_value) = &encoding_args.fill_value {
         // An explicit fill value was supplied
-        let fill_value = array_builder
-            .data_type
-            .fill_value_from_metadata(fill_value)
-            .unwrap();
+        let fill_value = data_type.fill_value_from_metadata(fill_value).unwrap();
         array_builder.fill_value(fill_value);
     } else if let Some(data_type) = &encoding_args.data_type {
         // The data type was changed, but no fill value supplied, so just cast it
@@ -635,7 +639,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
     }
 
     if let Some(shard_shape) = shard_shape {
-        array_builder.chunk_grid(shard_shape.try_into().unwrap());
+        array_builder.chunk_grid_metadata(shard_shape);
         let index_codecs = Arc::new(CodecChain::new(
             vec![],
             Arc::<BytesCodec>::default(),
@@ -671,20 +675,9 @@ pub enum CacheSize {
     ChunksPerThread(u64),
 }
 
-#[allow(clippy::large_enum_variant)]
-pub enum Cache {
-    SizeDefault(ChunkCacheDecodedLruSizeLimit),
-    SizeThreadLocal(ChunkCacheDecodedLruSizeLimitThreadLocal),
-    ChunksDefault(ChunkCacheDecodedLruChunkLimit),
-    ChunksThreadLocal(ChunkCacheDecodedLruChunkLimitThreadLocal),
-}
-
-pub fn do_reencode<
-    TStorageIn: ReadableStorageTraits + ?Sized + 'static,
-    TStorageOut: ReadableWritableStorageTraits + ?Sized + 'static,
->(
-    array_in: &Array<TStorageIn>,
-    array_out: &Array<TStorageOut>,
+pub fn do_reencode(
+    array_in: Arc<Array<dyn ReadableStorageTraits>>,
+    array_out: &Array<dyn ReadableWritableListableStorageTraits>,
     validate: bool,
     concurrent_chunks: Option<usize>,
     progress_callback: &ProgressCallback,
@@ -700,32 +693,34 @@ pub fn do_reencode<
     let start = SystemTime::now();
     let bytes_decoded = Mutex::new(0);
 
-    let cache = match cache_size {
+    let cache: Option<Arc<dyn ChunkCache>> = match cache_size {
         CacheSize::None => None,
-        CacheSize::SizeTotal(size) => {
-            Some(Cache::SizeDefault(ChunkCacheDecodedLruSizeLimit::new(size)))
-        }
-        CacheSize::SizePerThread(size) => Some(Cache::SizeThreadLocal(
-            ChunkCacheDecodedLruSizeLimitThreadLocal::new(size),
+        CacheSize::SizeTotal(size) => Some(Arc::new(ChunkCacheDecodedLruSizeLimit::new(
+            array_in.clone(),
+            size,
+        ))),
+        CacheSize::SizePerThread(size) => Some(Arc::new(
+            ChunkCacheDecodedLruSizeLimitThreadLocal::new(array_in.clone(), size),
         )),
-        CacheSize::ChunksTotal(chunks) => Some(Cache::ChunksDefault(
-            ChunkCacheDecodedLruChunkLimit::new(chunks),
-        )),
-        CacheSize::ChunksPerThread(chunks) => Some(Cache::ChunksThreadLocal(
-            ChunkCacheDecodedLruChunkLimitThreadLocal::new(chunks),
+        CacheSize::ChunksTotal(chunks) => Some(Arc::new(ChunkCacheDecodedLruChunkLimit::new(
+            array_in.clone(),
+            chunks,
+        ))),
+        CacheSize::ChunksPerThread(chunks) => Some(Arc::new(
+            ChunkCacheDecodedLruChunkLimitThreadLocal::new(array_in.clone(), chunks),
         )),
     };
 
     let chunk_representation = array_out
         .chunk_array_representation(&vec![0; array_out.chunk_grid().dimensionality()])
         .unwrap();
-    let chunks = ArraySubset::new_with_shape(array_out.chunk_grid_shape().unwrap());
+    let chunks = ArraySubset::new_with_shape(array_out.chunk_grid_shape().clone());
 
     let concurrent_target = std::thread::available_parallelism().unwrap().get();
     let (chunks_concurrent_limit, codec_concurrent_target) = calculate_chunk_and_codec_concurrency(
         concurrent_target,
         concurrent_chunks,
-        array_out.codecs(),
+        &array_out.codecs(),
         chunks.num_elements_usize(),
         &chunk_representation,
     );
@@ -744,34 +739,26 @@ pub fn do_reencode<
             .into_par_iter()
             .map(|chunk_indices| {
                 let chunk_subset = array_out.chunk_subset(&chunk_indices).unwrap();
-                let chunks = chunk_subset
-                    .chunks(write_shape)
-                    .expect("write shape dimensionality has been validated");
-                chunks.len()
+                chunk_subset
+                    .shape()
+                    .iter()
+                    .zip(write_shape)
+                    .map(|(s, w)| s.div_ceil(w.get()))
+                    .sum::<u64>()
             })
-            .sum::<usize>()
+            .sum::<u64>()
     } else {
-        chunks.num_elements_usize()
+        chunks.num_elements()
     };
+    let num_iterations = usize::try_from(num_iterations).unwrap();
 
     let progress = Progress::new(num_iterations, progress_callback);
 
     let retrieve_array_subset = |subset: &ArraySubset| {
         if let Some(cache) = &cache {
-            match cache {
-                Cache::SizeDefault(cache) => {
-                    array_in.retrieve_array_subset_opt_cached(cache, subset, &codec_options)
-                }
-                Cache::SizeThreadLocal(cache) => {
-                    array_in.retrieve_array_subset_opt_cached(cache, subset, &codec_options)
-                }
-                Cache::ChunksDefault(cache) => {
-                    array_in.retrieve_array_subset_opt_cached(cache, subset, &codec_options)
-                }
-                Cache::ChunksThreadLocal(cache) => {
-                    array_in.retrieve_array_subset_opt_cached(cache, subset, &codec_options)
-                }
-            }
+            Ok(Arc::unwrap_or_clone(
+                cache.retrieve_array_subset(subset, &codec_options)?,
+            ))
         } else {
             array_in.retrieve_array_subset_opt(subset, &codec_options)
         }
@@ -786,7 +773,25 @@ pub fn do_reencode<
             |chunk_indices: Vec<u64>| {
                 let chunk_subset = array_out.chunk_subset(&chunk_indices).unwrap();
                 if let Some(write_shape) = &write_shape {
-                    for (_, chunk_subset_write) in &chunk_subset.chunks(write_shape)? {
+                    use zarrs::array::chunk_grid::ChunkGridTraits;
+                    let write_grid = RegularChunkGrid::new(
+                        chunk_subset.shape().to_vec(),
+                        write_shape.clone().into(),
+                    )
+                    .map_err(|_| {
+                        IncompatibleDimensionalityError::new(
+                            write_shape.len(),
+                            chunk_subset.dimensionality(),
+                        )
+                    })?;
+                    // FIXME: Add ChunkGrid iteration in `zarrs`
+                    for chunk_write in
+                        ArraySubset::new_with_shape(write_grid.grid_shape().clone()).indices()
+                    {
+                        let chunk_subset_write = write_grid
+                            .subset(&chunk_write)
+                            .expect("matching dimensionality")
+                            .expect("determinate for regular chunk grid");
                         let chunk_subset_write = chunk_subset_write.overlap(&chunk_subset)?;
                         let bytes = progress.read(|| retrieve_array_subset(&chunk_subset_write))?;
                         *bytes_decoded.lock().unwrap() += bytes.size();

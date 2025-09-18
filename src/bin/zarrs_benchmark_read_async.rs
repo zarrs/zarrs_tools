@@ -89,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if let (Some(inner_chunk_shape), true) =
         (array.effective_inner_chunk_shape(), args.inner_chunks)
     {
-        let inner_chunks = ArraySubset::new_with_shape(array.inner_chunk_grid_shape().unwrap());
+        let inner_chunks = ArraySubset::new_with_shape(array.inner_chunk_grid_shape().clone());
         let inner_chunk_indices = inner_chunks.indices();
         let inner_chunk_representation = ChunkRepresentation::new(
             inner_chunk_shape.to_vec(),
@@ -100,7 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             calculate_chunk_and_codec_concurrency(
                 concurrent_target,
                 args.concurrent_chunks,
-                array.codecs(),
+                &array.codecs(),
                 inner_chunks.num_elements_usize(),
                 &inner_chunk_representation,
             );
@@ -136,14 +136,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else {
         // Calculate chunk/codec concurrency
-        let chunks = ArraySubset::new_with_shape(array.chunk_grid_shape().unwrap());
+        let chunks = ArraySubset::new_with_shape(array.chunk_grid_shape().clone());
         let chunk_representation =
             array.chunk_array_representation(&vec![0; array.chunk_grid().dimensionality()])?;
         let (chunk_concurrent_limit, codec_concurrent_target) =
             calculate_chunk_and_codec_concurrency(
                 concurrent_target,
                 args.concurrent_chunks,
-                array.codecs(),
+                &array.codecs(),
                 chunks.num_elements_usize(),
                 &chunk_representation,
             );

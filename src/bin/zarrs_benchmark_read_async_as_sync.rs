@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     zarrs::config::global_config_mut().set_validate_checksums(!args.ignore_checksums);
 
-    let chunks = ArraySubset::new_with_shape(array.chunk_grid_shape().unwrap());
+    let chunks = ArraySubset::new_with_shape(array.chunk_grid_shape().clone());
     let chunk_indices = chunks.indices();
 
     let concurrent_target = std::thread::available_parallelism().unwrap().get();
@@ -102,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if let (Some(inner_chunk_shape), true) =
         (array.effective_inner_chunk_shape(), args.inner_chunks)
     {
-        let inner_chunks = ArraySubset::new_with_shape(array.inner_chunk_grid_shape().unwrap());
+        let inner_chunks = ArraySubset::new_with_shape(array.inner_chunk_grid_shape().clone());
         let inner_chunk_indices = inner_chunks.indices();
         let inner_chunk_representation = ChunkRepresentation::new(
             inner_chunk_shape.to_vec(),
@@ -113,7 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             calculate_chunk_and_codec_concurrency(
                 concurrent_target,
                 args.concurrent_chunks,
-                array.codecs(),
+                &array.codecs(),
                 inner_chunks.num_elements_usize(),
                 &inner_chunk_representation,
             );
@@ -145,7 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             calculate_chunk_and_codec_concurrency(
                 concurrent_target,
                 args.concurrent_chunks,
-                array.codecs(),
+                &array.codecs(),
                 chunks.num_elements_usize(),
                 &chunk_representation,
             );

@@ -39,7 +39,7 @@ ndarray = { version = "0.16.0", features = ["approx", "rayon"] }
 num-traits = "0.2.18"
 # object_store = { version = "0.11.0", optional = true, features = ["http"] } # , "aws"
 ome_zarr_metadata = { version = "0.2.3", optional = true }
-opendal = { version = "0.53.3", default-features = false, features = ["services-fs", "services-http"] } # , "services-s3"
+opendal = { version = "0.54.0", default-features = false, features = ["services-fs", "services-http"] } # , "services-s3"
 rayon = "1.10.0"
 rayon_iter_concurrent_limit = "0.2.0"
 serde = { version = "1.0.197", features = ["derive"] }
@@ -49,9 +49,8 @@ tempfile = "3.10.1"
 thiserror = "2.0.0"
 tokio = { version = "1.34.0", features = ["macros", "rt-multi-thread"] }
 unsafe_cell_slice = "0.2.1"
-zarrs = { version = "0.21.2" }
-# zarrs_object_store = { version = "0.1.0" }
-zarrs_opendal = { version = "0.7.0" }
+zarrs = { version = "0.22.0" }
+zarrs_opendal = { version = "0.9.0" }
 
 [[bin]]
 name = "zarrs_benchmark_read_sync"
@@ -107,10 +106,10 @@ lto = "thin"
 [patch.crates-io]
 # zarrs = { path = "../zarrs/zarrs" }
 # zarrs_storage = { path = "../zarrs/zarrs_storage" }
-# zarrs_opendal = { path = "../zarrs/zarrs_opendal" }
+# zarrs_opendal = { path = "../zarrs_opendal" }
 # zarrs = { git = "https://github.com/zarrs/zarrs.git" }
 # zarrs_storage = { git = "https://github.com/zarrs/zarrs.git" }
-# zarrs_opendal = { git = "https://github.com/zarrs/zarrs.git" }
+# zarrs_opendal = { git = "https://github.com/zarrs/zarrs_opendal.git" }
 # ome_zarr_metadata = { git = "https://github.com/zarrs/rust_ome_zarr_metadata.git" }
 
 [lints.clippy]

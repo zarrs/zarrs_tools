@@ -151,8 +151,7 @@ impl FilterTraits for SummedAreaTable {
 
         let progress = {
             Progress::new(
-                usize::try_from(output.chunk_grid_shape().unwrap().iter().product::<u64>())
-                    .unwrap()
+                usize::try_from(output.chunk_grid_shape().iter().product::<u64>()).unwrap()
                     * output.dimensionality(),
                 progress_callback,
             )
@@ -168,7 +167,7 @@ impl FilterTraits for SummedAreaTable {
         };
 
         let dimensionality = output.chunk_grid().dimensionality();
-        let chunk_grid_shape = output.chunk_grid_shape().unwrap();
+        let chunk_grid_shape = output.chunk_grid_shape();
         for dim in (0..dimensionality).rev() {
             let chunk_grid_shape_dim = chunk_grid_shape
                 .iter()
@@ -265,13 +264,8 @@ mod tests {
     fn summed_area_table() -> Result<(), Box<dyn Error>> {
         let path = tempfile::TempDir::new()?;
         let store = FilesystemStore::new(path.path())?;
-        let array = ArrayBuilder::new(
-            vec![6, 6],
-            DataType::UInt8,
-            vec![2, 2].try_into()?,
-            0u8.into(),
-        )
-        .build(store.into(), "/")?;
+        let array = ArrayBuilder::new(vec![6, 6], vec![2, 2], DataType::UInt8, 0u8)
+            .build(store.into(), "/")?;
         let array_subset = array.subset_all();
         let elements_in: ndarray::ArrayD<u8> = ndarray::array![
             [31, 2, 4, 33, 5, 36],
@@ -292,7 +286,7 @@ mod tests {
         let mut array_output = array
             .builder()
             .data_type(DataType::UInt16)
-            .fill_value(0u16.into())
+            .fill_value(0u16)
             .build(store.into(), "/")?;
         let progress_callback = |_stats: ProgressStats| {};
         SummedAreaTable::new(None).apply(
