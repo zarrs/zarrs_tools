@@ -22,14 +22,14 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
-      - run: CARGO_PROFILE_DEV_CODEGEN_UNITS=1 cargo build ${{ matrix.features }}
+      - run: RUSTFLAGS="-C lto=off" cargo build ${{ matrix.features }}
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: CARGO_PROFILE_TEST_CODEGEN_UNITS=8 cargo test --all-features
+      - run: RUSTFLAGS="-C lto=off" cargo test --all-features
   fmt:
     runs-on: ubuntu-latest
     steps:
