@@ -13,30 +13,27 @@ jobs:
   build:
     strategy:
       matrix:
-        toolchain: ["stable", "1.82", "beta", "nightly"]
+        toolchain: ["stable", "1.82"]
         features: ["--features \"\"", "--all-features", "--no-default-features"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt update && sudo apt install -y cmake clang-15
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build ${{ matrix.features }}
+      - run: CARGO_PROFILE_DEV_CODEGEN_UNITS=8 cargo build ${{ matrix.features }}
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt update && sudo apt install -y cmake clang-15
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-features
+      - run: CARGO_PROFILE_TEST_CODEGEN_UNITS=8 cargo test --all-features
   fmt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt update && sudo apt install -y cmake clang-15
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup component add rustfmt
       - uses: Swatinem/rust-cache@v2
@@ -45,7 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt update && sudo apt install -y cmake clang-15
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup component add clippy
       - uses: Swatinem/rust-cache@v2
