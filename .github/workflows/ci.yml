@@ -22,7 +22,7 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
-      - run: CARGO_PROFILE_DEV_CODEGEN_UNITS=8 cargo build ${{ matrix.features }}
+      - run: CARGO_PROFILE_DEV_CODEGEN_UNITS=1 cargo build ${{ matrix.features }}
   test:
     runs-on: ubuntu-latest
     steps:
