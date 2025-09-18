@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.6] - 2025-09-18
+
 ### Added
 - Add `aarch64-pc-windows-msvc` target to release artifacts
 - Add trusted publishing to crates.io
@@ -300,7 +302,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
  - Initial public release
 
-[unreleased]: https://github.com/zarrs/zarrs_tools/compare/v0.7.5...HEAD
+[unreleased]: https://github.com/zarrs/zarrs_tools/compare/v0.7.6...HEAD
+[0.7.6]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.6
 [0.7.5]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.5
 [0.7.4]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.4
 [0.7.3]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.3
