@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Add `aarch64-pc-windows-msvc` target to release artifacts
+- Add trusted publishing to crates.io
 
 ### Changed
 - Bump `zarrs` to 0.22.0
