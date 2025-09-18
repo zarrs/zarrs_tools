@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.7] - 2025-09-18
+
+### Fixed
+
+- Fixed GitHub artifact release / publish process
+
 ## [0.7.6] - 2025-09-18
 
 ### Added
@@ -302,7 +308,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
  - Initial public release
 
-[unreleased]: https://github.com/zarrs/zarrs_tools/compare/v0.7.6...HEAD
+[unreleased]: https://github.com/zarrs/zarrs_tools/compare/v0.7.7...HEAD
+[0.7.7]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.7
 [0.7.6]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.6
 [0.7.5]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.5
 [0.7.4]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.4
