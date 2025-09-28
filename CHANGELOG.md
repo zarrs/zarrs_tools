@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Add `--direct-io` flag to various binaries
+- Add direct I/O support to various binaries, enabled with `--direct-io` flag
 
 ## [0.7.7] - 2025-09-18
 
