@@ -2818,9 +2818,9 @@ dependencies = [
 
 [[package]]
 name = "zarrs"
-version = "0.22.0"
+version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b408c24eb19d21ad4e76fe578160aef80f03a00df30ed0cd4574fec7116183a9"
+checksum = "f1cae02b55fcd477e63c3d29cd04933234ad9f7a9889f935cae3934c8d31718e"
 dependencies = [
  "async-generic",
  "async-lock",
@@ -2863,9 +2863,9 @@ dependencies = [
 
 [[package]]
 name = "zarrs_data_type"
-version = "0.3.3"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "267cee58631b1aecfdbe61c9f1ca51e0f7c8f39d2ba06a43215216dc7293eeaa"
+checksum = "22e68a3b9e663cf4933afcd90f460ee72986fdf6c2b4d43d0441ad049b802342"
 dependencies = [
  "derive_more",
  "half",

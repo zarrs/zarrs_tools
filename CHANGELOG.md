@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add `--direct-io` flag to `zarrs_benchmark_read_sync`
+
 ## [0.7.7] - 2025-09-18
 
 ### Fixed
