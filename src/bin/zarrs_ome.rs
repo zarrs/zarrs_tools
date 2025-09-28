@@ -18,7 +18,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
     array::{Array, ArrayCodecTraits, ArrayMetadata, ChunkRepresentation, Element, ElementOwned},
     array_subset::ArraySubset,
-    filesystem::FilesystemStore,
+    filesystem::{FilesystemStore, FilesystemStoreOptions},
     group::{Group, GroupMetadata, GroupMetadataV3},
     storage::{StorePrefix, WritableStorageTraits},
 };
@@ -139,6 +139,18 @@ struct Cli {
     /// Consider reducing this for images with large chunk sizes or on systems with low memory availability.
     #[arg(long)]
     chunk_limit: Option<usize>,
+
+    /// Enable direct I/O for filesystem operations.
+    ///
+    /// If set, filesystem operations will use direct I/O bypassing the page cache.
+    #[arg(long, default_value_t = false)]
+    direct_io: bool,
+}
+
+fn create_filesystem_store(path: &Path, direct_io: bool) -> anyhow::Result<FilesystemStore> {
+    let mut options = FilesystemStoreOptions::default();
+    options.direct_io(direct_io);
+    FilesystemStore::new_with_options(path, options).map_err(Into::into)
 }
 
 fn bar_style_run() -> ProgressStyle {
@@ -289,7 +301,7 @@ fn run() -> Result<(), anyhow::Error> {
 
     let start = std::time::Instant::now();
 
-    let store_in = FilesystemStore::new(&cli.input)?;
+    let store_in = create_filesystem_store(&cli.input, cli.direct_io)?;
     let array_in = Array::open(store_in.into(), "/")?;
 
     let multi_progress = MultiProgress::new();
@@ -313,7 +325,7 @@ fn run() -> Result<(), anyhow::Error> {
     };
 
     // Create group
-    let store = std::sync::Arc::new(FilesystemStore::new(&cli.output)?);
+    let store = std::sync::Arc::new(create_filesystem_store(&cli.output, cli.direct_io)?);
     let mut group = Group::new_with_metadata(
         store.clone(),
         "/",
@@ -355,7 +367,7 @@ fn run() -> Result<(), anyhow::Error> {
         } else {
             // Reencode the input
             let reencode = zarrs_tools::filter::filters::reencode::Reencode::new(cli.chunk_limit);
-            let store_out = FilesystemStore::new(&cli.output)?;
+            let store_out = create_filesystem_store(&cli.output, cli.direct_io)?;
             let mut array_out = reencode
                 .output_array_builder(&array_in, &cli.reencoding)?
                 .build(store_out.into(), "/0")?;
@@ -366,7 +378,7 @@ fn run() -> Result<(), anyhow::Error> {
     }
 
     // Setup attributes
-    let store = std::sync::Arc::new(FilesystemStore::new(&cli.output)?);
+    let store = std::sync::Arc::new(create_filesystem_store(&cli.output, cli.direct_io)?);
     // store.erase_prefix(&StorePrefix::root()).unwrap();
     let mut array0 = Array::open(store.clone(), "/0")?;
     {
@@ -562,7 +574,7 @@ fn run() -> Result<(), anyhow::Error> {
         let progress_callback = ProgressCallback::new(&progress_callback);
 
         // Input
-        let store = FilesystemStore::new(&cli.output)?;
+        let store = create_filesystem_store(&cli.output, cli.direct_io)?;
         let array_input = Array::open(store.into(), &format!("/{}", i - 1))?;
 
         // Filters
@@ -605,7 +617,7 @@ fn run() -> Result<(), anyhow::Error> {
 
         // Output
         let output_path = cli.output.join(i.to_string());
-        let output_store = FilesystemStore::new(&cli.output)?;
+        let output_store = create_filesystem_store(&cli.output, cli.direct_io)?;
         let array_output = output_builder.build(output_store.into(), &format!("/{i}"))?;
         bar.set_prefix(format!("{i} {:?}", array_output.shape()));
 

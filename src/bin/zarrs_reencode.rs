@@ -81,6 +81,12 @@ struct Args {
     ///
     #[arg(long, verbatim_doc_comment, value_delimiter = ',')]
     write_shape: Option<Vec<NonZeroU64>>,
+
+    /// Enable direct I/O for filesystem operations.
+    ///
+    /// If set, filesystem operations will use direct I/O bypassing the page cache.
+    #[arg(long, default_value_t = false)]
+    direct_io: bool,
 }
 
 fn bar_style_run() -> ProgressStyle {
@@ -130,7 +136,7 @@ impl AsyncToSyncBlockOn for TokioBlockOn {
     }
 }
 
-fn get_storage(path: &str) -> anyhow::Result<ReadableListableStorage> {
+fn get_storage(path: &str, direct_io: bool) -> anyhow::Result<ReadableListableStorage> {
     if path.starts_with("http://") || path.starts_with("https://") {
         #[cfg(feature = "async")]
         {
@@ -158,7 +164,9 @@ fn get_storage(path: &str) -> anyhow::Result<ReadableListableStorage> {
     } else {
         Ok(Arc::new(FilesystemStore::new_with_options(
             path,
-            FilesystemStoreOptions::default().direct_io(true).clone(),
+            FilesystemStoreOptions::default()
+                .direct_io(direct_io)
+                .clone(),
         )?))
     }
 }
@@ -168,7 +176,7 @@ fn main() -> anyhow::Result<()> {
 
     zarrs::config::global_config_mut().set_validate_checksums(!args.ignore_checksums);
 
-    let storage_in = get_storage(&args.path_in)?;
+    let storage_in = get_storage(&args.path_in, args.direct_io)?;
     let array_in = Arc::new(zarrs::array::Array::open(storage_in.clone().readable(), "/").unwrap());
     if args.verbose {
         println!(
@@ -182,8 +190,10 @@ fn main() -> anyhow::Result<()> {
     let progress_callback = |stats: ProgressStats| progress_callback(stats, &bar);
     let progress_callback = ProgressCallback::new(&progress_callback);
 
+    let mut options = FilesystemStoreOptions::default();
+    options.direct_io(args.direct_io);
     let storage_out: Arc<dyn ReadableWritableListableStorageTraits> =
-        Arc::new(FilesystemStore::new(args.path_out.clone()).unwrap());
+        Arc::new(FilesystemStore::new_with_options(args.path_out.clone(), options).unwrap());
     storage_out.erase_prefix(&StorePrefix::root()).unwrap();
     let builder = get_array_builder_reencode(&args.encoding, &array_in, None);
     let array_out = builder.build(storage_out.clone(), "/").unwrap();

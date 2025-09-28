@@ -11,7 +11,7 @@ use itertools::Itertools;
 use tempfile::TempDir;
 use zarrs::{
     array::{Array, ArrayBuilder, ArrayCreateError},
-    filesystem::FilesystemStore,
+    filesystem::{FilesystemStore, FilesystemStoreOptions},
     storage::{StorageError, StorePrefix, WritableStorageTraits},
 };
 use zarrs_tools::{
@@ -56,6 +56,12 @@ struct Cli {
     /// Path to a JSON run configuration.
     pub run_config: Option<PathBuf>,
 
+    /// Enable direct I/O for filesystem operations.
+    ///
+    /// If set, filesystem operations will use direct I/O bypassing the page cache.
+    #[arg(long, default_value_t = false)]
+    direct_io: bool,
+
     #[command(subcommand)]
     filter: Option<FilterCommand>,
 }
@@ -72,8 +78,13 @@ fn bar_style_finish() -> ProgressStyle {
         .unwrap_or(ProgressStyle::default_bar())
 }
 
-fn load_array<P: Into<PathBuf>>(path: P) -> Result<Array<FilesystemStore>, ArrayCreateError> {
-    let store = FilesystemStore::new(path.into())
+fn load_array<P: Into<PathBuf>>(
+    path: P,
+    direct_io: bool,
+) -> Result<Array<FilesystemStore>, ArrayCreateError> {
+    let mut options = FilesystemStoreOptions::default();
+    options.direct_io(direct_io);
+    let store = FilesystemStore::new_with_options(path.into(), options)
         .map_err(|err| ArrayCreateError::StorageError(StorageError::Other(err.to_string())))?;
     Array::open(store.into(), "/")
 }
@@ -82,8 +93,11 @@ fn load_array<P: Into<PathBuf>>(path: P) -> Result<Array<FilesystemStore>, Array
 fn create_array<P: Into<PathBuf>>(
     path: P,
     builder: &ArrayBuilder,
+    direct_io: bool,
 ) -> Result<Array<FilesystemStore>, ArrayCreateError> {
-    let store = FilesystemStore::new(path.into())
+    let mut options = FilesystemStoreOptions::default();
+    options.direct_io(direct_io);
+    let store = FilesystemStore::new_with_options(path.into(), options)
         .map_err(|err| ArrayCreateError::StorageError(StorageError::Other(err.to_string())))?;
     store.erase_prefix(&StorePrefix::root()).unwrap();
     builder.build(store.into(), "/")
@@ -94,11 +108,13 @@ fn get_array_input_output(
     input: &std::path::Path,
     output: &std::path::Path,
     reencode: &ZarrReencodingArgs,
+    direct_io: bool,
 ) -> Result<(Array<FilesystemStore>, Array<FilesystemStore>), ArrayCreateError> {
-    let array_input = load_array(input)?;
+    let array_input = load_array(input, direct_io)?;
     let array_output = create_array(
         output,
         &filter.output_array_builder(&array_input, reencode)?,
+        direct_io,
     )?;
     Ok((array_input, array_output))
 }
@@ -241,6 +257,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         .try_collect()?;
 
     // Collect filters/input/outputs and check compatibility
+    let direct_io = cli.direct_io;
     let filter_input_output: Vec<_> = itertools::izip!(
         &filter_commands,
         &bars,
@@ -257,6 +274,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 input.path(),
                 output.path(),
                 filter_command.common_args().reencode(),
+                direct_io,
             )?;
             bar.println(format!(
             "{}{}\n\targs:   {}\n\tencode: {}\n\tinput:  {} {:?} {:?}\n\toutput: {} {:?} {:?}{}",

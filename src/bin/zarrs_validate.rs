@@ -32,6 +32,12 @@ struct Args {
     /// Number of concurrent chunks to compare.
     #[arg(long)]
     concurrent_chunks: Option<usize>,
+
+    /// Enable direct I/O for filesystem operations.
+    ///
+    /// If set, filesystem operations will use direct I/O bypassing the page cache.
+    #[arg(long, default_value_t = false)]
+    direct_io: bool,
 }
 
 fn bar_style_run() -> ProgressStyle {
@@ -49,7 +55,7 @@ impl AsyncToSyncBlockOn for TokioBlockOn {
     }
 }
 
-fn get_storage(path: &str) -> anyhow::Result<ReadableListableStorage> {
+fn get_storage(path: &str, direct_io: bool) -> anyhow::Result<ReadableListableStorage> {
     if path.starts_with("http://") || path.starts_with("https://") {
         let builder = opendal::services::Http::default().endpoint(path);
         let operator = opendal::Operator::new(builder)?.finish();
@@ -72,7 +78,9 @@ fn get_storage(path: &str) -> anyhow::Result<ReadableListableStorage> {
     } else {
         Ok(Arc::new(FilesystemStore::new_with_options(
             path,
-            FilesystemStoreOptions::default().direct_io(true).clone(),
+            FilesystemStoreOptions::default()
+                .direct_io(direct_io)
+                .clone(),
         )?))
     }
 }
@@ -90,8 +98,8 @@ fn main() {
 fn try_main() -> anyhow::Result<String> {
     let args = Args::parse();
 
-    let storage1 = get_storage(&args.first)?;
-    let storage2 = get_storage(&args.second)?;
+    let storage1 = get_storage(&args.first, args.direct_io)?;
+    let storage2 = get_storage(&args.second, args.direct_io)?;
     let array1 = zarrs::array::Array::open(storage1.clone(), "/").unwrap();
     let array2 = zarrs::array::Array::open(storage2.clone(), "/").unwrap();
 

@@ -64,7 +64,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Default filesystem store
     let mut options = FilesystemStoreOptions::default();
     options.direct_io(args.direct_io);
-    let storage: ReadableStorage = Arc::new(FilesystemStore::new_with_options(args.path.clone(), options)?);
+    let storage: ReadableStorage = Arc::new(FilesystemStore::new_with_options(
+        args.path.clone(),
+        options,
+    )?);
 
     let array = zarrs::array::Array::open(storage.clone(), "/")?;
     // println!("{:#?}", array.metadata());
