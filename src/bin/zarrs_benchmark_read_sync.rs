@@ -11,7 +11,7 @@ use zarrs::{
         ArrayShardedReadableExtCache, ChunkRepresentation,
     },
     array_subset::ArraySubset,
-    filesystem::FilesystemStore,
+    filesystem::{FilesystemStore, FilesystemStoreOptions},
     storage::ReadableStorage,
 };
 use zarrs_tools::calculate_chunk_and_codec_concurrency;
@@ -44,6 +44,12 @@ struct Args {
     /// If set, checksum validation in codecs (e.g. crc32c) is skipped.
     #[arg(long, default_value_t = false)]
     ignore_checksums: bool,
+
+    /// Enable direct I/O for filesystem operations.
+    ///
+    /// If set, filesystem operations will use direct I/O bypassing the page cache.
+    #[arg(long, default_value_t = false)]
+    direct_io: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -56,7 +62,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let storage: ReadableStorage = Arc::new(store::OpendalStore::new(operator));
 
     // Default filesystem store
-    let storage: ReadableStorage = Arc::new(FilesystemStore::new(args.path.clone())?);
+    let mut options = FilesystemStoreOptions::default();
+    options.direct_io(args.direct_io);
+    let storage: ReadableStorage = Arc::new(FilesystemStore::new_with_options(
+        args.path.clone(),
+        options,
+    )?);
 
     let array = zarrs::array::Array::open(storage.clone(), "/")?;
     // println!("{:#?}", array.metadata());

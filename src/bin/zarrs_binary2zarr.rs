@@ -13,7 +13,7 @@ use zarrs::{
     },
     array_subset::ArraySubset,
     config::global_config,
-    filesystem::FilesystemStore,
+    filesystem::{FilesystemStore, FilesystemStoreOptions},
     metadata::v3::MetadataV3,
     storage::ListableStorageTraits,
 };
@@ -85,6 +85,12 @@ struct Cli {
 
     /// The output directory for the zarr array.
     out: PathBuf,
+
+    /// Enable direct I/O for filesystem operations.
+    ///
+    /// If set, filesystem operations will use direct I/O bypassing the page cache.
+    #[arg(long, default_value_t = false)]
+    direct_io: bool,
     // /// The path to a binary file or a directory of binary files.
     // #[arg(short, long, num_args = 1..)]
     // file: Vec<PathBuf>,
@@ -212,7 +218,9 @@ fn main() -> anyhow::Result<()> {
 
     // Create storage
     let path_out = cli.out.as_path();
-    let store = std::sync::Arc::new(FilesystemStore::new(path_out).unwrap());
+    let mut options = FilesystemStoreOptions::default();
+    options.direct_io(cli.direct_io);
+    let store = std::sync::Arc::new(FilesystemStore::new_with_options(path_out, options).unwrap());
 
     // Create array
     let dimension_names = cli
