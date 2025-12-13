@@ -36,6 +36,11 @@ Options:
   -d, --data-type <DATA_TYPE>
           The data type as a string
           
+          Changing a data type will use standard rust numeric casting. See <https://doc.rust-lang.org/reference/expressions/operator-expr.html#r-expr.as.numeric>.
+          - Casting from a larger integer to a smaller integer will truncate,
+          - Casting from a float to an integer will round the float towards zero
+          - Casting from an integer to float will produce the closest possible float
+          
           Valid data types:
             - bool
             - int8, int16, int32, int64
@@ -67,6 +72,9 @@ Options:
           
           If specified, the array is encoded using the sharding codec.
           If any dimension has size zero, it will be set to match the array shape.
+
+      --ignore-input-sharding
+          If true, the sharding of the input will be ignored.
 
       --array-to-array-codecs <ARRAY_TO_ARRAY_CODECS>
           Array to array codecs.
@@ -146,6 +154,11 @@ Options:
           This parameter is ignored for unsharded arrays (the write shape is the chunk shape).
           
           Prefer to set the write shape to an integer multiple of the chunk shape to avoid unnecessary reads.
+
+      --direct-io
+          Enable direct I/O for filesystem operations.
+          
+          If set, filesystem operations will use direct I/O bypassing the page cache.
 
   -h, --help
           Print help (see a summary with '-h')

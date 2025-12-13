@@ -282,6 +282,11 @@ fn is_false(value: &bool) -> bool {
 pub struct ZarrReencodingArgs {
     /// The data type as a string
     ///
+    /// Changing between primitive data types is supported and uses standard rust numeric casting. See <https://doc.rust-lang.org/reference/expressions/operator-expr.html#r-expr.as.numeric>.
+    /// - Casting from a larger integer to a smaller integer will truncate,
+    /// - Casting from a float to an integer will round the float towards zero
+    /// - Casting from an integer to float will produce the closest possible float
+    ///
     /// Valid data types:
     ///   - bool
     ///   - int8, int16, int32, int64
