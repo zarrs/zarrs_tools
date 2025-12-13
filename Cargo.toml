@@ -52,6 +52,9 @@ unsafe_cell_slice = "0.2.1"
 zarrs = { version = "0.22.10" }
 zarrs_opendal = { version = "0.9.0" }
 
+[build-dependencies]
+libz-sys = "1.1.20" # https://github.com/rust-lang/libz-sys/commit/eb42f72bb4e23ea16b726bc14587d4c5b3d07212
+
 [[bin]]
 name = "zarrs_benchmark_read_sync"
 required-features = ["benchmark"]

@@ -2714,6 +2714,7 @@ dependencies = [
  "half",
  "indicatif",
  "itertools",
+ "libz-sys",
  "ndarray",
  "num-traits",
  "ome_zarr_metadata",
