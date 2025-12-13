@@ -13,8 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Bump `zarrs` to 0.22.10
-- Bump `opendal` to 0.55.0
-- Bump `zarrs_opendal` to 0.10.0
 - Bump `sysinfo` to 0.36.1
 
 ## [0.7.8] - 2025-10-05
