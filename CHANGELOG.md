@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add support for changing the data type in `zarrs_reencode`, `zarrs_filter`, and `zarrs_ome`
+  - Uses standard Rust numeric casting when changing between primitive data types
+
 ## [0.7.8] - 2025-10-05
 
 ### Added

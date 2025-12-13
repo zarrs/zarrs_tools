@@ -8,6 +8,7 @@ use std::{
 };
 
 use clap::Parser;
+use num_traits::AsPrimitive;
 use progress::{Progress, ProgressCallback};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon_iter_concurrent_limit::iter_concurrent_limit;
@@ -280,6 +281,11 @@ fn is_false(value: &bool) -> bool {
 
 pub struct ZarrReencodingArgs {
     /// The data type as a string
+    ///
+    /// Changing between primitive data types is supported and uses standard rust numeric casting. See <https://doc.rust-lang.org/reference/expressions/operator-expr.html#r-expr.as.numeric>.
+    /// - Casting from a larger integer to a smaller integer will truncate,
+    /// - Casting from a float to an integer will round the float towards zero
+    /// - Casting from an integer to float will produce the closest possible float
     ///
     /// Valid data types:
     ///   - bool
@@ -675,6 +681,85 @@ pub enum CacheSize {
     ChunksPerThread(u64),
 }
 
+fn convert_and_store_subset(
+    array_in: &Arc<Array<dyn ReadableStorageTraits>>,
+    array_out: &Array<dyn ReadableWritableListableStorageTraits>,
+    subset: &ArraySubset,
+    progress: &Progress,
+    bytes_decoded: &Mutex<usize>,
+) -> anyhow::Result<()> {
+    macro_rules! convert_elements {
+        ( $t_in:ty, $t_out:ty ) => {{
+            let elements_in =
+                progress.read(|| array_in.retrieve_array_subset_elements::<$t_in>(subset))?;
+            let bytes_size = elements_in.len() * std::mem::size_of::<$t_in>();
+            let elements_out = progress.process(|| {
+                elements_in
+                    .into_par_iter()
+                    .map(|value| value.as_())
+                    .collect::<Vec<$t_out>>()
+            });
+            progress
+                .write(|| array_out.store_array_subset_elements::<$t_out>(subset, &elements_out))?;
+            *bytes_decoded.lock().unwrap() += bytes_size;
+        }};
+    }
+
+    macro_rules! convert_from_input {
+        ( $t_out:ty, [$( ( $data_type:ident, $t_in:ty ) ),* ]) => {
+            match array_in.data_type() {
+                $(DataType::$data_type => { convert_elements!($t_in, $t_out) } ,)*
+                _ => anyhow::bail!("Unsupported input data type: {}", array_in.data_type())
+            }
+        };
+    }
+
+    macro_rules! convert_to_output {
+        ([$( ( $data_type:ident, $type_out:ty ) ),* ]) => {
+            match array_out.data_type() {
+                $(
+                    DataType::$data_type => {
+                        convert_from_input!($type_out, [
+                            (Bool, u8),
+                            (Int8, i8),
+                            (Int16, i16),
+                            (Int32, i32),
+                            (Int64, i64),
+                            (UInt8, u8),
+                            (UInt16, u16),
+                            (UInt32, u32),
+                            (UInt64, u64),
+                            (BFloat16, half::bf16),
+                            (Float16, half::f16),
+                            (Float32, f32),
+                            (Float64, f64)
+                        ]
+                    )}
+                ,)*
+                _ => anyhow::bail!("Unsupported output data type: {}", array_out.data_type())
+            }
+        };
+    }
+
+    convert_to_output!([
+        (Bool, u8),
+        (Int8, i8),
+        (Int16, i16),
+        (Int32, i32),
+        (Int64, i64),
+        (UInt8, u8),
+        (UInt16, u16),
+        (UInt32, u32),
+        (UInt64, u64),
+        (BFloat16, half::bf16),
+        (Float16, half::f16),
+        (Float32, f32),
+        (Float64, f64)
+    ]);
+
+    Ok(())
+}
+
 pub fn do_reencode(
     array_in: Arc<Array<dyn ReadableStorageTraits>>,
     array_out: &Array<dyn ReadableWritableListableStorageTraits>,
@@ -831,8 +916,53 @@ pub fn do_reencode(
             }
         )?;
     } else {
-        // FIXME
-        todo!("zarrs_reencode does not yet support data type conversion!")
+        // Data type conversion required
+        let convert_data = |chunk_indices: Vec<u64>| {
+            let chunk_subset = array_out.chunk_subset(&chunk_indices).unwrap();
+            if let Some(write_shape) = &write_shape {
+                use zarrs::array::chunk_grid::ChunkGridTraits;
+                let write_grid = RegularChunkGrid::new(
+                    chunk_subset.shape().to_vec(),
+                    write_shape.clone().into(),
+                )
+                .map_err(|_| {
+                    IncompatibleDimensionalityError::new(
+                        write_shape.len(),
+                        chunk_subset.dimensionality(),
+                    )
+                })?;
+                // FIXME: Add ChunkGrid iteration in `zarrs`
+                for chunk_write in
+                    ArraySubset::new_with_shape(write_grid.grid_shape().clone()).indices()
+                {
+                    let chunk_subset_write = write_grid
+                        .subset(&chunk_write)
+                        .expect("matching dimensionality")
+                        .expect("determinate for regular chunk grid");
+                    let chunk_subset_write = chunk_subset_write.overlap(&chunk_subset)?;
+                    convert_and_store_subset(
+                        &array_in,
+                        array_out,
+                        &chunk_subset_write,
+                        &progress,
+                        &bytes_decoded,
+                    )?;
+                    progress.next();
+                }
+            } else {
+                convert_and_store_subset(
+                    &array_in,
+                    array_out,
+                    &chunk_subset,
+                    &progress,
+                    &bytes_decoded,
+                )?;
+                progress.next();
+            }
+            Ok::<_, anyhow::Error>(())
+        };
+
+        iter_concurrent_limit!(chunks_concurrent_limit, indices, try_for_each, convert_data)?;
     }
 
     let duration = start.elapsed().unwrap().as_secs_f32();
