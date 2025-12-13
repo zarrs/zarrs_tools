@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.9] - 2025-12-13
+
 ### Added
 - Add support for changing the data type in `zarrs_reencode`, `zarrs_filter`, and `zarrs_ome`
   - Uses standard Rust numeric casting when changing between primitive data types
@@ -320,7 +322,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
  - Initial public release
 
-[unreleased]: https://github.com/zarrs/zarrs_tools/compare/v0.7.8...HEAD
+[unreleased]: https://github.com/zarrs/zarrs_tools/compare/v0.7.9...HEAD
+[0.7.9]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.9
 [0.7.8]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.8
 [0.7.7]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.7
 [0.7.6]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.6
