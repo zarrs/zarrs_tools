@@ -13,7 +13,7 @@ jobs:
   build:
     strategy:
       matrix:
-        toolchain: ["stable", "1.82"]
+        toolchain: ["stable"]
         features: ["--features \"\"", "--all-features", "--no-default-features"]
     runs-on: ubuntu-latest
     steps:
@@ -46,6 +46,16 @@ jobs:
       - run: rustup component add clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-features -- -D warnings
+  msrv-1-82:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.82"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-hack cargo-minimal-versions --locked
+      - run: cargo minimal-versions check --all-features
   # semver:
   #   runs-on: ubuntu-latest
   #   steps:
