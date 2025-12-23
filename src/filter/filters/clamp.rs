@@ -3,7 +3,7 @@ use num_traits::AsPrimitive;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{Array, DataType},
+    array::{Array, ArrayIndicesTinyVec, DataType},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
 };
@@ -130,31 +130,21 @@ impl FilterTraits for Clamp {
             chunk_limit,
             indices,
             try_for_each,
-            |chunk_indices: Vec<u64>| {
+            |chunk_indices: ArrayIndicesTinyVec| {
                 macro_rules! apply_input {
                     ( $t_out:ty, [$( ( $data_type_in:ident, $t_in:ty ) ),* ]) => {
                         match input.data_type() {
                             $(DataType::$data_type_in => {
                                 let input_output_subset = output.chunk_subset_bounded(&chunk_indices).unwrap();
-                                let mut elements_in =
-                                    progress.read(|| input.retrieve_array_subset_elements::<$t_in>(&input_output_subset))?;
+                                let mut elements_in: Vec<$t_in> =
+                                    progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
                                 progress.process(|| self.apply_elements_inplace::<$t_in>(&mut elements_in))?;
 
-                                // macro_rules! apply_input_inner {
-                                //     ($t_in, $t_in) => {{
-                                //         progress.write(|| {
-                                //             output.store_array_subset_elements::<$t_in>(&input_output_subset, elements_in)
-                                //         })?;
-                                //     }}
-                                //     ($t_in, $t_out) => {{
-                                        let elements_out = elements_in.iter().map(|v| v.as_()).collect::<Vec<_>>();
-                                        drop(elements_in);
-                                        progress.write(|| {
-                                            output.store_array_subset_elements::<$t_out>(&input_output_subset, &elements_out)
-                                        })?;
-                                //     }}
-                                // }
-                                // apply_input_inner($t_in, $t_out)
+                                let elements_out = elements_in.iter().map(|v| v.as_()).collect::<Vec<$t_out>>();
+                                drop(elements_in);
+                                progress.write(|| {
+                                    output.store_array_subset(&input_output_subset, elements_out)
+                                })?;
                             } ,)*
                             _ => panic!()
                         }

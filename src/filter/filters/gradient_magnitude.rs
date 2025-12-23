@@ -4,7 +4,7 @@ use num_traits::AsPrimitive;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{Array, DataType, Element, ElementOwned},
+    array::{Array, ArrayIndicesTinyVec, DataType, Element, ElementOwned},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
 };
@@ -85,8 +85,8 @@ impl GradientMagnitude {
             &vec![1; input.dimensionality()],
         );
 
-        let input_array = progress
-            .read(|| input.retrieve_array_subset_ndarray::<TIn>(subset_overlap.subset_input()))?;
+        let input_array: ndarray::ArrayD<TIn> =
+            progress.read(|| input.retrieve_array_subset(subset_overlap.subset_input()))?;
 
         let gradient_magnitude = progress.process(|| {
             let input_array_f32 = input_array.map(|x| x.as_());
@@ -98,7 +98,7 @@ impl GradientMagnitude {
 
         progress.write(|| {
             output
-                .store_array_subset_ndarray::<TOut, _>(subset_output.start(), gradient_magnitude)
+                .store_array_subset(&subset_output, gradient_magnitude)
                 .unwrap()
         });
 
@@ -219,7 +219,7 @@ impl FilterTraits for GradientMagnitude {
             chunk_limit,
             indices,
             try_for_each,
-            |chunk_indices: Vec<u64>| {
+            |chunk_indices: ArrayIndicesTinyVec| {
                 macro_rules! apply_output {
                     ( $type_in:ty, [$( ( $data_type_out:ident, $type_out:ty ) ),* ]) => {
                         match output.data_type() {
@@ -289,14 +289,14 @@ mod tests {
         let array = ArrayBuilder::new(vec![4, 4], vec![2, 2], DataType::Float32, 0.0f32)
             .build(store.into(), "/")?;
         let array_subset = array.subset_all();
-        array.store_array_subset_elements(
+        array.store_array_subset(
             &array_subset,
             &(0..array_subset.num_elements_usize())
                 .map(|u| ((u / array.shape()[1] as usize) + u % array.shape()[1] as usize) as f32)
                 .collect::<Vec<f32>>(),
         )?;
 
-        let elements = array.retrieve_array_subset_ndarray::<f32>(&array_subset)?;
+        let elements: ndarray::ArrayD<f32> = array.retrieve_array_subset(&array_subset)?;
         println!("{elements:?}");
 
         let path = tempfile::TempDir::new()?;
@@ -308,7 +308,7 @@ mod tests {
             &mut array_output,
             &ProgressCallback::new(&progress_callback),
         )?;
-        let elements = array_output.retrieve_array_subset_ndarray::<f32>(&array_subset)?;
+        let elements: ndarray::ArrayD<f32> = array_output.retrieve_array_subset(&array_subset)?;
         println!("{elements:?}");
 
         let elements_ref: ndarray::ArrayD<f32> = ndarray::array![

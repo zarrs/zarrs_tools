@@ -2,7 +2,7 @@ use half::{bf16, f16};
 use num_traits::AsPrimitive;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use zarrs::{
-    array::{Array, ArrayError, DataType, ElementOwned},
+    array::{Array, ArrayError, ArrayIndicesTinyVec, DataType, ElementOwned},
     array_subset::ArraySubset,
     storage::ReadableStorageTraits,
 };
@@ -49,9 +49,9 @@ pub fn calculate_histogram_t<
     let chunks = ArraySubset::new_with_shape(array.chunk_grid_shape().clone());
 
     let chunk_incr_histogram = |histogram: Result<Vec<u64>, ArrayError>,
-                                chunk_indices: Vec<u64>| {
+                                chunk_indices: ArrayIndicesTinyVec| {
         let mut histogram = histogram?;
-        let elements = array.retrieve_chunk_elements::<T>(&chunk_indices)?;
+        let elements: Vec<T> = array.retrieve_chunk(&chunk_indices)?;
         for element in elements {
             let norm: f64 = (element.as_() - min) / (max - min);
             let bin = ((norm * n_bins as f64).max(0.0).floor() as usize).min(n_bins - 1);

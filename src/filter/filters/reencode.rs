@@ -3,7 +3,7 @@ use num_traits::AsPrimitive;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{Array, DataType, Element, ElementOwned},
+    array::{Array, ArrayBytes, ArrayIndicesTinyVec, DataType, Element, ElementOwned},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
 };
@@ -49,7 +49,8 @@ impl Reencode {
         progress: &Progress,
     ) -> Result<(), FilterError> {
         let input_output_subset = output.chunk_subset_bounded(chunk_indices).unwrap();
-        let subset_bytes = progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
+        let subset_bytes: ArrayBytes =
+            progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
         progress.write(|| output.store_array_subset(&input_output_subset, subset_bytes))?;
         progress.next();
         Ok(())
@@ -68,8 +69,8 @@ impl Reencode {
     {
         let input_output_subset = output.chunk_subset_bounded(chunk_indices).unwrap();
 
-        let input_elements =
-            progress.read(|| input.retrieve_array_subset_elements::<TIn>(&input_output_subset))?;
+        let input_elements: Vec<TIn> =
+            progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
 
         let output_elements = progress.process(|| {
             input_elements
@@ -79,9 +80,7 @@ impl Reencode {
         });
         drop(input_elements);
 
-        progress.write(|| {
-            output.store_array_subset_elements::<TOut>(&input_output_subset, &output_elements)
-        })?;
+        progress.write(|| output.store_array_subset(&input_output_subset, output_elements))?;
 
         progress.next();
         Ok(())
@@ -151,7 +150,7 @@ impl FilterTraits for Reencode {
                 chunk_limit,
                 indices,
                 try_for_each,
-                |chunk_indices: Vec<u64>| {
+                |chunk_indices: ArrayIndicesTinyVec| {
                     self.apply_chunk(input, output, &chunk_indices, &progress)
                 }
             )?;
@@ -160,7 +159,7 @@ impl FilterTraits for Reencode {
                 chunk_limit,
                 indices,
                 try_for_each,
-                |chunk_indices: Vec<u64>| {
+                |chunk_indices: ArrayIndicesTinyVec| {
                     macro_rules! apply_output {
                         ( $type_in:ty, [$( ( $data_type_out:ident, $type_out:ty ) ),* ]) => {
                             match output.data_type() {

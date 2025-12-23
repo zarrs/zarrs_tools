@@ -3,7 +3,7 @@ use num_traits::AsPrimitive;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{Array, DataType, Element, ElementOwned},
+    array::{Array, ArrayIndicesTinyVec, DataType, Element, ElementOwned},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
 };
@@ -80,8 +80,8 @@ impl Rescale {
         // Determine the input and output subset
         let input_output_subset = output.chunk_subset_bounded(chunk_indices).unwrap();
 
-        let elements_in =
-            progress.read(|| input.retrieve_array_subset_elements::<TIn>(&input_output_subset))?;
+        let elements_in: Vec<TIn> =
+            progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
 
         let elements_out = if self.add_first {
             progress.process(|| {
@@ -98,9 +98,7 @@ impl Rescale {
         };
         drop(elements_in);
 
-        progress.write(|| {
-            output.store_array_subset_elements::<TOut>(&input_output_subset, &elements_out)
-        })?;
+        progress.write(|| output.store_array_subset(&input_output_subset, elements_out))?;
 
         progress.next();
         Ok(())
@@ -182,7 +180,7 @@ impl FilterTraits for Rescale {
             chunk_limit,
             indices,
             try_for_each,
-            |chunk_indices: Vec<u64>| {
+            |chunk_indices: ArrayIndicesTinyVec| {
                 macro_rules! apply_input {
                     ( $t_out:ty, [$( ( $data_type:ident, $t_in:ty ) ),* ]) => {
                         match input.data_type() {

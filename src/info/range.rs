@@ -2,7 +2,7 @@ use half::{bf16, f16};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon_iter_concurrent_limit::iter_concurrent_limit;
 use zarrs::{
-    array::{Array, ArrayError, DataType, ElementOwned},
+    array::{Array, ArrayError, ArrayIndicesTinyVec, DataType, ElementOwned},
     array_subset::ArraySubset,
     storage::ReadableStorageTraits,
 };
@@ -107,9 +107,9 @@ pub fn calculate_range_t<
 ) -> Result<(T, T), ArrayError> {
     let chunks = ArraySubset::new_with_shape(array.chunk_grid_shape().clone());
 
-    let chunk_min_max = |chunk_indices: Vec<u64>| {
+    let chunk_min_max = |chunk_indices: ArrayIndicesTinyVec| {
         // TODO: Codec concurrent limit
-        let elements = array.retrieve_chunk_elements::<T>(&chunk_indices)?;
+        let elements: Vec<T> = array.retrieve_chunk(&chunk_indices)?;
         let (mut min, mut max) = (t_min.clone(), t_max.clone());
         for element in &elements {
             min = if element < &min { element.clone() } else { min };

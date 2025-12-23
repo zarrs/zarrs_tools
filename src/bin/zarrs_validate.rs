@@ -6,6 +6,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon_iter_concurrent_limit::iter_concurrent_limit;
 use zarrs::array::codec::CodecOptionsBuilder;
+use zarrs::array::{ArrayBytes, ArrayIndicesTinyVec};
 use zarrs::array_subset::ArraySubset;
 use zarrs::filesystem::{FilesystemStore, FilesystemStoreOptions};
 use zarrs::storage::{
@@ -146,12 +147,14 @@ fn try_main() -> anyhow::Result<String> {
         chunks_concurrent_limit,
         indices,
         try_for_each,
-        |chunk_indices: Vec<u64>| {
+        |chunk_indices: ArrayIndicesTinyVec| {
             let step = step.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             bar.set_position(step);
             let chunk_subset = array1.chunk_subset(&chunk_indices).unwrap();
-            let bytes_first = array1.retrieve_chunk_opt(&chunk_indices, &codec_options)?;
-            let bytes_second = array2.retrieve_array_subset_opt(&chunk_subset, &codec_options)?;
+            let bytes_first: ArrayBytes =
+                array1.retrieve_chunk_opt(&chunk_indices, &codec_options)?;
+            let bytes_second: ArrayBytes =
+                array2.retrieve_array_subset_opt(&chunk_subset, &codec_options)?;
             if bytes_first == bytes_second {
                 Ok(())
             } else {

@@ -16,7 +16,10 @@ use ome_zarr_metadata::v0_5::{
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
-    array::{Array, ArrayCodecTraits, ArrayMetadata, ChunkRepresentation, Element, ElementOwned},
+    array::{
+        Array, ArrayCodecTraits, ArrayIndicesTinyVec, ArrayMetadata, ChunkRepresentation, Element,
+        ElementOwned,
+    },
     array_subset::ArraySubset,
     filesystem::{FilesystemStore, FilesystemStoreOptions},
     group::{Group, GroupMetadata, GroupMetadataV3},
@@ -210,13 +213,11 @@ where
     let downsample_input_subset =
         downsample_filter.input_subset(array_input.shape(), &output_subset);
     let output_chunk = {
-        let input_chunk = progress
-            .read(|| array_input.retrieve_array_subset_ndarray::<T>(&downsample_input_subset))?;
+        let input_chunk: ndarray::ArrayD<T> =
+            progress.read(|| array_input.retrieve_array_subset(&downsample_input_subset))?;
         downsample_filter.apply_ndarray_discrete(input_chunk, progress)
     };
-    progress.write(|| {
-        array_output.store_array_subset_ndarray::<T, _>(output_subset.start(), output_chunk)
-    })?;
+    progress.write(|| array_output.store_array_subset(&output_subset, output_chunk))?;
     Ok(())
 }
 
@@ -235,13 +236,11 @@ where
     let downsample_input_subset =
         downsample_filter.input_subset(array_input.shape(), &output_subset);
     let output_chunk = {
-        let input_chunk = progress
-            .read(|| array_input.retrieve_array_subset_ndarray::<T>(&downsample_input_subset))?;
+        let input_chunk: ndarray::ArrayD<T> =
+            progress.read(|| array_input.retrieve_array_subset(&downsample_input_subset))?;
         downsample_filter.apply_ndarray_continuous(input_chunk, progress)
     };
-    progress.write(|| {
-        array_output.store_array_subset_ndarray::<T, _>(output_subset.start(), output_chunk)
-    })?;
+    progress.write(|| array_output.store_array_subset(&output_subset, output_chunk))?;
     Ok(())
 }
 
@@ -266,9 +265,8 @@ where
         gaussian_filter.kernel_half_size(),
     );
     let gaussian_chunk = {
-        let input_chunk = progress.read(|| {
-            array_input.retrieve_array_subset_ndarray::<T>(gaussian_subset_overlap.subset_input())
-        })?;
+        let input_chunk: ndarray::ArrayD<T> = progress
+            .read(|| array_input.retrieve_array_subset(gaussian_subset_overlap.subset_input()))?;
         progress.process(|| {
             let input_chunk: ndarray::ArrayD<f32> = input_chunk.map(|x| x.as_()); // par?
             let output_chunk = gaussian_filter.apply_ndarray(input_chunk);
@@ -276,9 +274,7 @@ where
         })
     };
     let output_chunk = downsample_filter.apply_ndarray_continuous(gaussian_chunk, progress);
-    progress.write(|| {
-        array_output.store_array_subset_ndarray::<T, _>(output_subset.start(), output_chunk)
-    })?;
+    progress.write(|| array_output.store_array_subset(&output_subset, output_chunk))?;
     Ok(())
 }
 
@@ -645,7 +641,7 @@ fn run() -> Result<(), anyhow::Error> {
                 + if let Some(gaussian_filter) = &gaussian_filter {
                     let downsample_input_subset = downsample_filter.input_subset(
                         array_input.shape(),
-                        &ArraySubset::new_with_shape(output_chunk.shape_u64()),
+                        &ArraySubset::new_with_shape(output_chunk.shape_u64().to_vec()),
                     );
                     let downsample_input = ChunkRepresentation::new(
                         downsample_input_subset
@@ -683,7 +679,7 @@ fn run() -> Result<(), anyhow::Error> {
             chunk_limit,
             indices,
             try_for_each,
-            |chunk_indices: Vec<u64>| {
+            |chunk_indices: ArrayIndicesTinyVec| {
                 macro_rules! discrete_or_continuous {
                     ( $t:ty ) => {{
                         if cli.discrete {

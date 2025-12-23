@@ -7,8 +7,8 @@ use clap::Parser;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
     array::{
-        codec::CodecOptionsBuilder, ArrayShardedExt, ArrayShardedReadableExt,
-        ArrayShardedReadableExtCache, ChunkRepresentation,
+        codec::CodecOptionsBuilder, ArrayBytes, ArrayIndicesTinyVec, ArrayShardedExt,
+        ArrayShardedReadableExt, ArrayShardedReadableExtCache, ChunkRepresentation,
     },
     array_subset::ArraySubset,
     storage::{
@@ -98,7 +98,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = SystemTime::now();
     let bytes_decoded = Mutex::new(0);
     if args.read_all {
-        *bytes_decoded.lock().unwrap() += array.retrieve_array_subset(&array.subset_all())?.size();
+        *bytes_decoded.lock().unwrap() += array
+            .retrieve_array_subset::<ArrayBytes>(&array.subset_all())?
+            .size();
     } else if let (Some(inner_chunk_shape), true) =
         (array.effective_inner_chunk_shape(), args.inner_chunks)
     {
@@ -126,9 +128,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chunks_concurrent_limit,
             inner_chunk_indices,
             for_each,
-            |inner_chunk_indices: Vec<u64>| {
+            |inner_chunk_indices: ArrayIndicesTinyVec| {
                 // println!("Chunk/shard: {:?}", chunk_indices);
-                let bytes = array
+                let bytes: ArrayBytes = array
                     .retrieve_inner_chunk_opt(
                         &shard_index_cache,
                         &inner_chunk_indices,
@@ -160,9 +162,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chunks_concurrent_limit,
             chunk_indices,
             for_each,
-            |chunk_indices: Vec<u64>| {
+            |chunk_indices: ArrayIndicesTinyVec| {
                 // println!("Chunk/shard: {:?}", chunk_indices);
-                let bytes = array
+                let bytes: ArrayBytes = array
                     .retrieve_chunk_opt(&chunk_indices, &codec_options)
                     .unwrap();
                 *bytes_decoded.lock().unwrap() += bytes.size();

@@ -3,7 +3,7 @@ use num_traits::AsPrimitive;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{Array, DataType, Element, ElementOwned},
+    array::{Array, ArrayBytes, ArrayIndicesTinyVec, DataType, Element, ElementOwned},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
 };
@@ -83,7 +83,8 @@ impl Crop {
         progress: &Progress,
     ) -> Result<(), FilterError> {
         let (input_subset, output_subset) = self.get_input_output_subset(output, chunk_indices);
-        let output_bytes = progress.read(|| input.retrieve_array_subset(&input_subset))?;
+        let output_bytes: ArrayBytes =
+            progress.read(|| input.retrieve_array_subset(&input_subset))?;
         progress.write(|| output.store_array_subset(&output_subset, output_bytes))?;
         progress.next();
         Ok(())
@@ -102,8 +103,8 @@ impl Crop {
     {
         let (input_subset, output_subset) = self.get_input_output_subset(output, chunk_indices);
 
-        let input_elements =
-            progress.read(|| input.retrieve_array_subset_elements::<TIn>(&input_subset))?;
+        let input_elements: Vec<TIn> =
+            progress.read(|| input.retrieve_array_subset(&input_subset))?;
 
         let output_elements = progress.process(|| {
             input_elements
@@ -113,9 +114,7 @@ impl Crop {
         });
         drop(input_elements);
 
-        progress.write(|| {
-            output.store_array_subset_elements::<TOut>(&output_subset, &output_elements)
-        })?;
+        progress.write(|| output.store_array_subset(&output_subset, output_elements))?;
 
         progress.next();
         Ok(())
@@ -186,7 +185,7 @@ impl FilterTraits for Crop {
             chunk_limit,
             indices,
             try_for_each,
-            |chunk_indices: Vec<u64>| {
+            |chunk_indices: ArrayIndicesTinyVec| {
                 if input.data_type() == output.data_type() {
                     self.apply_chunk(input, output, &chunk_indices, &progress)
                 } else {

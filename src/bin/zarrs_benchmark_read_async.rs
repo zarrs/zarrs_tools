@@ -7,7 +7,7 @@ use clap::Parser;
 use futures::{FutureExt, StreamExt};
 use zarrs::{
     array::{
-        codec::CodecOptionsBuilder, ArrayShardedExt, AsyncArrayShardedReadableExt,
+        codec::CodecOptionsBuilder, ArrayBytes, ArrayShardedExt, AsyncArrayShardedReadableExt,
         AsyncArrayShardedReadableExtCache, ChunkRepresentation,
     },
     array_subset::ArraySubset,
@@ -82,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = SystemTime::now();
     let mut bytes_decoded = 0;
     if args.read_all {
-        let array_data = array
+        let array_data: ArrayBytes = array
             .async_retrieve_array_subset(&array.subset_all())
             .await?;
         bytes_decoded += array_data.size();
@@ -125,7 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             &inner_chunk_indices,
                             &codec_options,
                         )
-                        .map(|bytes| bytes.map(|bytes| bytes.size()))
+                        .map(|bytes: Result<ArrayBytes, _>| bytes.map(|bytes| bytes.size()))
                         .await
                 }
             })
@@ -161,7 +161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 async move {
                     array
                         .async_retrieve_chunk_opt(&chunk_indices, &codec_options)
-                        .map(|bytes| bytes.map(|bytes| bytes.size()))
+                        .map(|bytes: Result<ArrayBytes, _>| bytes.map(|bytes| bytes.size()))
                         .await
                 }
             })

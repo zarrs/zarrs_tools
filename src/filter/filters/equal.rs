@@ -3,7 +3,9 @@ use num_traits::AsPrimitive;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{Array, DataType, Element, ElementOwned, FillValue, FillValueMetadataV3},
+    array::{
+        Array, ArrayIndicesTinyVec, DataType, Element, ElementOwned, FillValue, FillValueMetadataV3,
+    },
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
 };
@@ -152,14 +154,14 @@ impl FilterTraits for Equal {
             chunk_limit,
             indices,
             try_for_each,
-            |chunk_indices: Vec<u64>| {
+            |chunk_indices: ArrayIndicesTinyVec| {
                 let input_output_subset = output.chunk_subset_bounded(&chunk_indices).unwrap();
                 macro_rules! apply_input {
                     ( $t_out:ty, [$( ( $data_type_in:ident, $t_in:ty ) ),* ]) => {
                         match input.data_type() {
                             $(DataType::$data_type_in => {
-                                let input_elements =
-                                    progress.read(|| input.retrieve_array_subset_elements::<$t_in>(&input_output_subset))?;
+                                let input_elements: Vec<$t_in> =
+                                    progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
 
                                 let output_elements =
                                     progress.process(|| {
@@ -169,7 +171,7 @@ impl FilterTraits for Equal {
                                 drop(input_elements);
 
                                 progress.write(|| {
-                                    output.store_array_subset_elements::<$t_out>(&input_output_subset, &output_elements)
+                                    output.store_array_subset(&input_output_subset, output_elements)
                                 })?;
 
                                 progress.next();

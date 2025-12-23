@@ -6,7 +6,7 @@ use num_traits::{AsPrimitive, Zero};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{Array, DataType, Element, ElementOwned},
+    array::{Array, ArrayIndicesTinyVec, DataType, Element, ElementOwned},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
 };
@@ -73,14 +73,14 @@ impl SummedAreaTable {
                 .enumerate()
                 .map(|(dim_i, indices)| if dim_i == dim { i } else { *indices })
                 .collect::<Vec<_>>();
-            let mut chunk = progress.read(|| {
+            let mut chunk: ndarray::ArrayD<TOut> = progress.read(|| {
                 let chunk_subset = output.chunk_subset(&chunk_indices)?;
                 if dim == dimensionality - 1 {
                     input
-                        .retrieve_array_subset_ndarray::<TIn>(&chunk_subset)
+                        .retrieve_array_subset::<ndarray::ArrayD<TIn>>(&chunk_subset)
                         .map(|array| array.map(|v| v.as_()))
                 } else {
-                    output.retrieve_chunk_ndarray::<TOut>(&chunk_indices)
+                    output.retrieve_chunk(&chunk_indices)
                 }
             })?;
 
@@ -98,7 +98,7 @@ impl SummedAreaTable {
                 });
             });
 
-            progress.write(|| output.store_chunk_ndarray(&chunk_indices, chunk))?;
+            progress.write(|| output.store_chunk(&chunk_indices, chunk))?;
             progress.next();
         }
 
@@ -180,7 +180,7 @@ impl FilterTraits for SummedAreaTable {
                 chunk_limit,
                 indices,
                 try_for_each,
-                |chunk_start_dim: Vec<u64>| {
+                |chunk_start_dim: ArrayIndicesTinyVec| {
                     macro_rules! sat {
                         ( $t_in:ty, $t_out:ty) => {{
                             self.apply_dim::<$t_in, $t_out>(
@@ -276,9 +276,9 @@ mod tests {
             [1, 35, 34, 3, 32, 6],
         ]
         .into_dyn();
-        array.store_array_subset_ndarray(array_subset.start(), elements_in)?;
+        array.store_array_subset(&array_subset, elements_in)?;
 
-        let elements = array.retrieve_array_subset_ndarray::<u8>(&array_subset)?;
+        let elements: ndarray::ArrayD<u8> = array.retrieve_array_subset(&array_subset)?;
         println!("{elements:?}");
 
         let path = tempfile::TempDir::new()?;
@@ -294,7 +294,7 @@ mod tests {
             &mut array_output,
             &ProgressCallback::new(&progress_callback),
         )?;
-        let elements = array_output.retrieve_array_subset_ndarray::<u16>(&array_subset)?;
+        let elements: ndarray::ArrayD<u16> = array_output.retrieve_array_subset(&array_subset)?;
         println!("{elements:?}");
 
         let elements_ref: ndarray::ArrayD<u16> = ndarray::array![

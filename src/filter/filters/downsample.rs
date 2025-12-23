@@ -5,7 +5,7 @@ use num_traits::{AsPrimitive, FromPrimitive};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{Array, DataType},
+    array::{Array, ArrayIndicesTinyVec, DataType},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
 };
@@ -192,39 +192,32 @@ impl FilterTraits for Downsample {
             chunk_limit,
             indices,
             try_for_each,
-            |chunk_indices: Vec<u64>| {
+            |chunk_indices: ArrayIndicesTinyVec| {
                 // Determine the input and output subset
                 let output_subset = output.chunk_subset_bounded(&chunk_indices).unwrap();
                 let input_subset = self.input_subset(input.shape(), &output_subset);
 
                 macro_rules! downsample {
                     ( $t_in:ty, $t_out:ty ) => {{
-                        let input_array = progress
-                            .read(|| input.retrieve_array_subset_ndarray::<$t_in>(&input_subset))?;
-                        let output_array = if self.discrete {
+                        let input_array: ndarray::ArrayD<$t_in> =
+                            progress.read(|| input.retrieve_array_subset(&input_subset))?;
+                        let output_array: ndarray::ArrayD<$t_out> = if self.discrete {
                             self.apply_ndarray_discrete(input_array, &progress)
                         } else {
                             self.apply_ndarray_continuous(input_array, &progress)
                         };
-                        progress.write(|| {
-                            output.store_array_subset_ndarray::<$t_out, _>(
-                                output_subset.start(),
-                                output_array,
-                            )
-                        })?;
+                        progress
+                            .write(|| output.store_array_subset(&output_subset, output_array))?;
                     }};
                 }
                 macro_rules! downsample_continuous_only {
                     ( $t_in:ty, $t_out:ty ) => {{
-                        let input_array = progress
-                            .read(|| input.retrieve_array_subset_ndarray::<$t_in>(&input_subset))?;
-                        let output_array = self.apply_ndarray_continuous(input_array, &progress);
-                        progress.write(|| {
-                            output.store_array_subset_ndarray::<$t_out, _>(
-                                output_subset.start(),
-                                output_array,
-                            )
-                        })?;
+                        let input_array: ndarray::ArrayD<$t_in> =
+                            progress.read(|| input.retrieve_array_subset(&input_subset))?;
+                        let output_array: ndarray::ArrayD<$t_out> =
+                            self.apply_ndarray_continuous(input_array, &progress);
+                        progress
+                            .write(|| output.store_array_subset(&output_subset, output_array))?;
                     }};
                 }
                 macro_rules! apply_input {

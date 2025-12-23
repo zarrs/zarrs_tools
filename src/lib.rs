@@ -27,7 +27,7 @@ use zarrs::{
             NamedBytesToBytesCodec, ShardingCodec,
         },
         concurrency::RecommendedConcurrency,
-        Array, ArrayBuilder, ArrayError, ArrayShardedExt, ChunkCache,
+        Array, ArrayBuilder, ArrayError, ArrayIndicesTinyVec, ArrayShardedExt, ChunkCache,
         ChunkCacheDecodedLruChunkLimit, ChunkCacheDecodedLruChunkLimitThreadLocal,
         ChunkCacheDecodedLruSizeLimit, ChunkCacheDecodedLruSizeLimitThreadLocal,
         ChunkRepresentation, CodecChain, DataType, DimensionName, FillValue, FillValueMetadataV3,
@@ -695,8 +695,8 @@ fn convert_and_store_subset(
 ) -> anyhow::Result<()> {
     macro_rules! convert_elements {
         ( $t_in:ty, $t_out:ty ) => {{
-            let elements_in =
-                progress.read(|| array_in.retrieve_array_subset_elements::<$t_in>(subset))?;
+            let elements_in: Vec<$t_in> =
+                progress.read(|| array_in.retrieve_array_subset(subset))?;
             let bytes_size = elements_in.len() * std::mem::size_of::<$t_in>();
             let elements_out = progress.process(|| {
                 elements_in
@@ -704,8 +704,7 @@ fn convert_and_store_subset(
                     .map(|value| value.as_())
                     .collect::<Vec<$t_out>>()
             });
-            progress
-                .write(|| array_out.store_array_subset_elements::<$t_out>(subset, &elements_out))?;
+            progress.write(|| array_out.store_array_subset(subset, elements_out))?;
             *bytes_decoded.lock().unwrap() += bytes_size;
         }};
     }
@@ -847,7 +846,7 @@ pub fn do_reencode(
     let retrieve_array_subset = |subset: &ArraySubset| {
         if let Some(cache) = &cache {
             Ok(Arc::unwrap_or_clone(
-                cache.retrieve_array_subset(subset, &codec_options)?,
+                cache.retrieve_array_subset_bytes(subset, &codec_options)?,
             ))
         } else {
             array_in.retrieve_array_subset_opt(subset, &codec_options)
@@ -860,7 +859,7 @@ pub fn do_reencode(
             chunks_concurrent_limit,
             indices,
             try_for_each,
-            |chunk_indices: Vec<u64>| {
+            |chunk_indices: ArrayIndicesTinyVec| {
                 let chunk_subset = array_out.chunk_subset(&chunk_indices).unwrap();
                 if let Some(write_shape) = &write_shape {
                     use zarrs::array::chunk_grid::ChunkGridTraits;
@@ -922,7 +921,7 @@ pub fn do_reencode(
         )?;
     } else {
         // Data type conversion required
-        let convert_data = |chunk_indices: Vec<u64>| {
+        let convert_data = |chunk_indices: ArrayIndicesTinyVec| {
             let chunk_subset = array_out.chunk_subset(&chunk_indices).unwrap();
             if let Some(write_shape) = &write_shape {
                 use zarrs::array::chunk_grid::ChunkGridTraits;
