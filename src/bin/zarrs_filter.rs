@@ -297,9 +297,16 @@ fn run() -> Result<(), Box<dyn Error>> {
             array_output.store_metadata()?; // erased before filter run
 
             filter.is_compatible(
-                &array_input.chunk_array_representation(&vec![0; array_input.dimensionality()])?,
-                &array_output
-                    .chunk_array_representation(&vec![0; array_output.dimensionality()])?,
+                (
+                    &array_input.chunk_shape(&vec![0; array_input.dimensionality()])?,
+                    array_input.data_type(),
+                    array_input.fill_value(),
+                ),
+                (
+                    &array_output.chunk_shape(&vec![0; array_output.dimensionality()])?,
+                    array_output.data_type(),
+                    array_output.fill_value(),
+                ),
             )?;
             Ok::<_, FilterError>((
                 filter_command.name(),

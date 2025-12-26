@@ -16,10 +16,7 @@ use ome_zarr_metadata::v0_5::{
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
-    array::{
-        Array, ArrayCodecTraits, ArrayIndicesTinyVec, ArrayMetadata, ChunkRepresentation, Element,
-        ElementOwned,
-    },
+    array::{Array, ArrayCodecTraits, ArrayIndicesTinyVec, ArrayMetadata, Element, ElementOwned},
     array_subset::ArraySubset,
     filesystem::{FilesystemStore, FilesystemStoreOptions},
     group::{Group, GroupMetadata, GroupMetadataV3},
@@ -576,21 +573,20 @@ fn run() -> Result<(), anyhow::Error> {
         // Filters
 
         // Setup reencoding (this is a bit hacky)
-        let chunk_representation =
-            array_input.chunk_array_representation(&vec![0; array_input.dimensionality()])?;
+        let chunk_shape = array_input.chunk_shape(&vec![0; array_input.dimensionality()])?;
         let output_shape = downsample_filter.output_shape(&array_input).unwrap();
         let mut reencoding = ZarrReencodingArgs::default();
         if array_input.codecs().array_to_bytes_codec().identifier()
             == zarrs::registry::codec::SHARDING
         {
             reencoding.shard_shape = Some(
-                std::iter::zip(chunk_representation.shape(), &output_shape)
+                std::iter::zip(&chunk_shape, &output_shape)
                     .map(|(c, s)| std::cmp::min(c.get(), *s))
                     .collect_vec(),
             );
             let decode_granularity = array_input
                 .codecs()
-                .partial_decode_granularity(&chunk_representation);
+                .partial_decode_granularity(&chunk_shape);
             reencoding.chunk_shape = Some(
                 std::iter::zip(decode_granularity.as_slice(), &output_shape)
                     .map(|(g, s)| std::cmp::min(g.get(), *s))
@@ -626,33 +622,54 @@ fn run() -> Result<(), anyhow::Error> {
         // println!("{downsample_factor:?} -> {scale:?}");
 
         // Chunks
-        let chunks = ArraySubset::new_with_shape(array_output.chunk_grid_shape().clone());
+        let chunks = ArraySubset::new_with_shape(array_output.chunk_grid_shape().to_vec());
         let progress = Progress::new(chunks.num_elements_usize(), &progress_callback);
 
         let chunk_limit = if let Some(chunk_limit) = cli.chunk_limit {
             chunk_limit
         } else {
             // Get memory usage
-            let output_chunk =
-                array_output.chunk_array_representation(&vec![0; array_input.dimensionality()])?;
-            let downsample_memory =
-                downsample_filter.memory_per_chunk(&output_chunk /* unused */, &output_chunk);
+            let input_chunk_shape =
+                array_input.chunk_shape(&vec![0; array_input.dimensionality()])?;
+            let output_chunk_shape =
+                array_output.chunk_shape(&vec![0; array_output.dimensionality()])?;
+            let downsample_memory = downsample_filter.memory_per_chunk(
+                (
+                    &input_chunk_shape,
+                    array_input.data_type(),
+                    array_input.fill_value(),
+                ),
+                (
+                    &output_chunk_shape,
+                    array_output.data_type(),
+                    array_output.fill_value(),
+                ),
+            );
             let memory_per_chunk = downsample_memory
                 + if let Some(gaussian_filter) = &gaussian_filter {
                     let downsample_input_subset = downsample_filter.input_subset(
                         array_input.shape(),
-                        &ArraySubset::new_with_shape(output_chunk.shape_u64().to_vec()),
+                        &ArraySubset::new_with_shape(
+                            bytemuck::must_cast_slice(&output_chunk_shape).to_vec(),
+                        ),
                     );
-                    let downsample_input = ChunkRepresentation::new(
-                        downsample_input_subset
-                            .shape()
-                            .iter()
-                            .map(|s| NonZeroU64::new(*s).unwrap())
-                            .collect_vec(),
-                        array_input.data_type().clone(),
-                        array_input.fill_value().clone(),
-                    )?;
-                    gaussian_filter.memory_per_chunk(&downsample_input, &downsample_input)
+                    let downsample_input_shape = downsample_input_subset
+                        .shape()
+                        .iter()
+                        .map(|u| NonZeroU64::new(*u).unwrap())
+                        .collect_vec();
+                    gaussian_filter.memory_per_chunk(
+                        (
+                            &downsample_input_shape,
+                            array_input.data_type(),
+                            array_input.fill_value(),
+                        ),
+                        (
+                            &output_chunk_shape,
+                            array_input.data_type(),
+                            array_input.fill_value(),
+                        ),
+                    )
                 } else {
                     0
                 };

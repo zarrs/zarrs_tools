@@ -7,7 +7,7 @@ use zarrs_tools::{get_array_builder, ZarrEncodingArgs};
 
 use zarrs::{
     array::{
-        codec::{ArrayCodecTraits, CodecOptionsBuilder},
+        codec::{ArrayCodecTraits, CodecOptions},
         concurrency::RecommendedConcurrency,
         Array, DataType, Endianness,
     },
@@ -139,8 +139,8 @@ fn stdin_to_array(
 
     let n_blocks = usize::try_from(n_blocks).unwrap();
 
-    let chunk_representation = array
-        .chunk_array_representation(&vec![0; array.chunk_grid().dimensionality()])
+    let chunk_shape = array
+        .chunk_shape(&vec![0; array.chunk_grid().dimensionality()])
         .unwrap();
     let concurrent_target = std::thread::available_parallelism().unwrap().get();
     let (concurrent_chunks, codec_concurrent_target) =
@@ -156,12 +156,10 @@ fn stdin_to_array(
             },
             &array
                 .codecs()
-                .recommended_concurrency(&chunk_representation)
+                .recommended_concurrency(&chunk_shape, array.data_type())
                 .unwrap(),
         );
-    let codec_options = CodecOptionsBuilder::new()
-        .concurrent_target(codec_concurrent_target)
-        .build();
+    let codec_options = CodecOptions::default().with_concurrent_target(codec_concurrent_target);
 
     #[allow(clippy::mutex_integer)]
     let idxm = std::sync::Mutex::new(0u64);
@@ -210,7 +208,7 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Get data type
-    let data_type = zarrs::array::DataType::from_metadata(
+    let data_type = zarrs::array::NamedDataType::from_metadata(
         &cli.data_type,
         zarrs::config::global_config().data_type_aliases_v3(),
     )

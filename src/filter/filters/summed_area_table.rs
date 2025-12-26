@@ -13,7 +13,9 @@ use zarrs::{
 
 use crate::{
     filter::{
-        calculate_chunk_limit, filter_error::FilterError, filter_traits::FilterTraits,
+        calculate_chunk_limit,
+        filter_error::FilterError,
+        filter_traits::{ChunkInfo, FilterTraits},
         FilterArguments, FilterCommonArguments, UnsupportedDataTypeError,
     },
     progress::{Progress, ProgressCallback},
@@ -109,10 +111,10 @@ impl SummedAreaTable {
 impl FilterTraits for SummedAreaTable {
     fn is_compatible(
         &self,
-        chunk_input: &zarrs::array::ChunkRepresentation,
-        chunk_output: &zarrs::array::ChunkRepresentation,
+        chunk_input: ChunkInfo,
+        chunk_output: ChunkInfo,
     ) -> Result<(), FilterError> {
-        for data_type in [chunk_input.data_type(), chunk_output.data_type()] {
+        for data_type in [chunk_input.1, chunk_output.1] {
             match data_type {
                 DataType::Bool
                 | DataType::Int8
@@ -133,12 +135,8 @@ impl FilterTraits for SummedAreaTable {
         Ok(())
     }
 
-    fn memory_per_chunk(
-        &self,
-        chunk_input: &zarrs::array::ChunkRepresentation,
-        chunk_output: &zarrs::array::ChunkRepresentation,
-    ) -> usize {
-        chunk_input.fixed_element_size().unwrap() + chunk_output.fixed_element_size().unwrap()
+    fn memory_per_chunk(&self, chunk_input: ChunkInfo, chunk_output: ChunkInfo) -> usize {
+        chunk_input.1.fixed_size().unwrap() + chunk_output.1.fixed_size().unwrap()
     }
 
     fn apply(
@@ -160,9 +158,11 @@ impl FilterTraits for SummedAreaTable {
         let chunk_limit = if let Some(chunk_limit) = self.chunk_limit {
             chunk_limit
         } else {
+            let input_chunk_shape = input.chunk_shape(&vec![0; input.dimensionality()])?;
+            let output_chunk_shape = output.chunk_shape(&vec![0; input.dimensionality()])?;
             calculate_chunk_limit(self.memory_per_chunk(
-                &input.chunk_array_representation(&vec![0; input.dimensionality()])?,
-                &output.chunk_array_representation(&vec![0; input.dimensionality()])?,
+                (&input_chunk_shape, input.data_type(), input.fill_value()),
+                (&output_chunk_shape, output.data_type(), output.fill_value()),
             ))?
         };
 

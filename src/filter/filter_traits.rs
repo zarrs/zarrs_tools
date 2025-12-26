@@ -1,7 +1,9 @@
+use std::num::NonZeroU64;
+
 use zarrs::{
     array::{
-        data_type::DataTypeFillValueError, Array, ArrayBuilder, ArrayShape, ChunkRepresentation,
-        DataType, FillValue,
+        data_type::DataTypeFillValueError, Array, ArrayBuilder, ArrayShape, DataType, FillValue,
+        NamedDataType,
     },
     filesystem::FilesystemStore,
 };
@@ -12,22 +14,21 @@ use crate::{
 
 use super::filter_error::FilterError;
 
+/// A tuple representing chunk information: (shape, data_type, fill_value)
+pub type ChunkInfo<'a> = (&'a [NonZeroU64], &'a DataType, &'a FillValue);
+
 pub trait FilterTraits {
     /// Checks if the input and output are compatible.
     fn is_compatible(
         &self,
-        chunk_input: &ChunkRepresentation,
-        chunk_output: &ChunkRepresentation,
+        chunk_input: ChunkInfo,
+        chunk_output: ChunkInfo,
     ) -> Result<(), FilterError>;
 
     /// Returns the memory overhead per chunk.
     ///
     /// This can be used to automatically constrain the number of concurrent chunks based on the amount of available memory.
-    fn memory_per_chunk(
-        &self,
-        chunk_input: &ChunkRepresentation,
-        chunk_output: &ChunkRepresentation,
-    ) -> usize;
+    fn memory_per_chunk(&self, chunk_input: ChunkInfo, chunk_output: ChunkInfo) -> usize;
 
     /// Returns an [`ArrayShape`] if the filter changes the array shape.
     #[allow(unused_variables)]
@@ -35,12 +36,12 @@ pub trait FilterTraits {
         None
     }
 
-    /// Returns a [`DataType`] and [`FillValue`] if the filter changes the data type.
+    /// Returns a [`NamedDataType`] and [`FillValue`] if the filter changes the data type.
     #[allow(unused_variables)]
     fn output_data_type(
         &self,
         array_input: &Array<FilesystemStore>,
-    ) -> Option<(DataType, FillValue)> {
+    ) -> Option<(NamedDataType, FillValue)> {
         None
     }
 
@@ -53,7 +54,7 @@ pub trait FilterTraits {
 
         if let Some(data_type) = &reencoding_args.data_type {
             // Use explicitly set data type
-            let data_type = DataType::from_metadata(
+            let data_type = NamedDataType::from_metadata(
                 data_type,
                 zarrs::config::global_config().data_type_aliases_v3(),
             )
@@ -104,18 +105,14 @@ impl<T: FilterTraits + ?Sized> FilterTraits for Box<T> {
     #[inline]
     fn is_compatible(
         &self,
-        chunk_input: &ChunkRepresentation,
-        chunk_output: &ChunkRepresentation,
+        chunk_input: ChunkInfo,
+        chunk_output: ChunkInfo,
     ) -> Result<(), FilterError> {
         (**self).is_compatible(chunk_input, chunk_output)
     }
 
     #[inline]
-    fn memory_per_chunk(
-        &self,
-        chunk_input: &ChunkRepresentation,
-        chunk_output: &ChunkRepresentation,
-    ) -> usize {
+    fn memory_per_chunk(&self, chunk_input: ChunkInfo, chunk_output: ChunkInfo) -> usize {
         (**self).memory_per_chunk(chunk_input, chunk_output)
     }
 
@@ -132,7 +129,7 @@ impl<T: FilterTraits + ?Sized> FilterTraits for Box<T> {
     fn output_data_type(
         &self,
         array_input: &Array<FilesystemStore>,
-    ) -> Option<(DataType, FillValue)> {
+    ) -> Option<(NamedDataType, FillValue)> {
         (**self).output_data_type(array_input)
     }
 

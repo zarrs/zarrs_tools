@@ -5,7 +5,7 @@ use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon_iter_concurrent_limit::iter_concurrent_limit;
-use zarrs::array::codec::CodecOptionsBuilder;
+use zarrs::array::codec::CodecOptions;
 use zarrs::array::{ArrayBytes, ArrayIndicesTinyVec};
 use zarrs::array_subset::ArraySubset;
 use zarrs::filesystem::{FilesystemStore, FilesystemStoreOptions};
@@ -121,10 +121,10 @@ fn try_main() -> anyhow::Result<String> {
         );
     }
 
-    let chunks = ArraySubset::new_with_shape(array1.chunk_grid_shape().clone());
+    let chunks = ArraySubset::new_with_shape(array1.chunk_grid_shape().to_vec());
 
-    let chunk_representation = array1
-        .chunk_array_representation(&vec![0; array1.chunk_grid().dimensionality()])
+    let chunk_shape = array1
+        .chunk_shape(&vec![0; array1.chunk_grid().dimensionality()])
         .unwrap();
 
     let concurrent_target = std::thread::available_parallelism().unwrap().get();
@@ -133,11 +133,10 @@ fn try_main() -> anyhow::Result<String> {
         args.concurrent_chunks,
         &array1.codecs(),
         chunks.num_elements_usize(),
-        &chunk_representation,
+        &chunk_shape,
+        array1.data_type(),
     );
-    let codec_options = CodecOptionsBuilder::new()
-        .concurrent_target(codec_concurrent_target)
-        .build();
+    let codec_options = CodecOptions::default().with_concurrent_target(codec_concurrent_target);
 
     let num_iterations = chunks.num_elements_usize();
     bar.set_length(num_iterations as u64);

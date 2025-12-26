@@ -4,10 +4,12 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
     array::{
-        Array, ArrayIndicesTinyVec, DataType, Element, ElementOwned, FillValue, FillValueMetadataV3,
+        Array, ArrayIndicesTinyVec, DataType, Element, ElementOwned, FillValue,
+        FillValueMetadataV3, NamedDataType,
     },
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
+    registry::ExtensionAliasesDataTypeV3,
 };
 
 use crate::{
@@ -17,8 +19,10 @@ use crate::{
 };
 
 use crate::filter::{
-    calculate_chunk_limit, filter_error::FilterError, filter_traits::FilterTraits, FilterArguments,
-    FilterCommonArguments,
+    calculate_chunk_limit,
+    filter_error::FilterError,
+    filter_traits::{ChunkInfo, FilterTraits},
+    FilterArguments, FilterCommonArguments,
 };
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
@@ -82,10 +86,10 @@ impl Equal {
 impl FilterTraits for Equal {
     fn is_compatible(
         &self,
-        chunk_input: &zarrs::array::ChunkRepresentation,
-        chunk_output: &zarrs::array::ChunkRepresentation,
+        chunk_input: ChunkInfo,
+        chunk_output: ChunkInfo,
     ) -> Result<(), FilterError> {
-        match chunk_input.data_type() {
+        match chunk_input.1 {
             DataType::Bool
             | DataType::Int8
             | DataType::Int16
@@ -99,29 +103,27 @@ impl FilterTraits for Equal {
             | DataType::Float32
             | DataType::Float64
             | DataType::BFloat16 => {}
-            _ => Err(UnsupportedDataTypeError::from(
-                chunk_input.data_type().to_string(),
-            ))?,
+            _ => Err(UnsupportedDataTypeError::from(chunk_input.1.to_string()))?,
         };
-        match chunk_output.data_type() {
+        match chunk_output.1 {
             DataType::Bool | DataType::UInt8 => {}
-            _ => Err(UnsupportedDataTypeError::from(
-                chunk_output.data_type().to_string(),
-            ))?,
+            _ => Err(UnsupportedDataTypeError::from(chunk_output.1.to_string()))?,
         };
         Ok(())
     }
 
-    fn memory_per_chunk(
-        &self,
-        chunk_input: &zarrs::array::ChunkRepresentation,
-        chunk_output: &zarrs::array::ChunkRepresentation,
-    ) -> usize {
-        chunk_input.fixed_element_size().unwrap() + chunk_output.fixed_element_size().unwrap()
+    fn memory_per_chunk(&self, chunk_input: ChunkInfo, chunk_output: ChunkInfo) -> usize {
+        chunk_input.1.fixed_size().unwrap() + chunk_output.1.fixed_size().unwrap()
     }
 
-    fn output_data_type(&self, _input: &Array<FilesystemStore>) -> Option<(DataType, FillValue)> {
-        Some((DataType::Bool, FillValue::from(false)))
+    fn output_data_type(
+        &self,
+        _input: &Array<FilesystemStore>,
+    ) -> Option<(NamedDataType, FillValue)> {
+        Some((
+            DataType::Bool.into_named(&ExtensionAliasesDataTypeV3::default()),
+            FillValue::from(false),
+        ))
     }
 
     fn apply(
@@ -132,7 +134,7 @@ impl FilterTraits for Equal {
     ) -> Result<(), FilterError> {
         assert_eq!(output.shape(), input.shape());
 
-        let chunks = ArraySubset::new_with_shape(output.chunk_grid_shape().clone());
+        let chunks = ArraySubset::new_with_shape(output.chunk_grid_shape().to_vec());
         let progress = Progress::new(chunks.num_elements_usize(), progress_callback);
 
         let value = input
@@ -143,9 +145,11 @@ impl FilterTraits for Equal {
         let chunk_limit = if let Some(chunk_limit) = self.chunk_limit {
             chunk_limit
         } else {
+            let input_chunk_shape = input.chunk_shape(&vec![0; input.dimensionality()])?;
+            let output_chunk_shape = output.chunk_shape(&vec![0; input.dimensionality()])?;
             calculate_chunk_limit(self.memory_per_chunk(
-                &input.chunk_array_representation(&vec![0; input.dimensionality()])?,
-                &output.chunk_array_representation(&vec![0; input.dimensionality()])?,
+                (&input_chunk_shape, input.data_type(), input.fill_value()),
+                (&output_chunk_shape, output.data_type(), output.fill_value()),
             ))?
         };
 

@@ -12,9 +12,11 @@ use zarrs::{
 
 use crate::{
     filter::{
-        calculate_chunk_limit, filter_error::FilterError, filter_traits::FilterTraits,
-        kernel::apply_1d_kernel, ArraySubsetOverlap, FilterArguments, FilterCommonArguments,
-        UnsupportedDataTypeError,
+        calculate_chunk_limit,
+        filter_error::FilterError,
+        filter_traits::{ChunkInfo, FilterTraits},
+        kernel::apply_1d_kernel,
+        ArraySubsetOverlap, FilterArguments, FilterCommonArguments, UnsupportedDataTypeError,
     },
     progress::{Progress, ProgressCallback},
 };
@@ -122,10 +124,10 @@ impl Gaussian {
 impl FilterTraits for Gaussian {
     fn is_compatible(
         &self,
-        chunk_input: &zarrs::array::ChunkRepresentation,
-        chunk_output: &zarrs::array::ChunkRepresentation,
+        chunk_input: ChunkInfo,
+        chunk_output: ChunkInfo,
     ) -> Result<(), FilterError> {
-        for data_type in [chunk_input.data_type(), chunk_output.data_type()] {
+        for data_type in [chunk_input.1, chunk_output.1] {
             match data_type {
                 DataType::Bool
                 | DataType::Int8
@@ -146,25 +148,21 @@ impl FilterTraits for Gaussian {
         Ok(())
     }
 
-    fn memory_per_chunk(
-        &self,
-        chunk_input: &zarrs::array::ChunkRepresentation,
-        chunk_output: &zarrs::array::ChunkRepresentation,
-    ) -> usize {
+    fn memory_per_chunk(&self, chunk_input: ChunkInfo, chunk_output: ChunkInfo) -> usize {
         let num_input_elements = usize::try_from(
             chunk_output
-                .shape()
+                .0
                 .iter()
                 .zip(&self.kernel_half_size)
                 .map(|(s, kernel_half_size)| s.get() + kernel_half_size * 2)
                 .product::<u64>(),
         )
         .unwrap();
-        let num_output_elements = chunk_output.num_elements_usize();
-        num_input_elements
-            * (chunk_input.data_type().fixed_size().unwrap() + core::mem::size_of::<f32>() * 2)
+        let num_output_elements =
+            usize::try_from(chunk_output.0.iter().map(|s| s.get()).product::<u64>()).unwrap();
+        num_input_elements * (chunk_input.1.fixed_size().unwrap() + core::mem::size_of::<f32>() * 2)
             + num_output_elements
-                * (core::mem::size_of::<f32>() + chunk_output.data_type().fixed_size().unwrap())
+                * (core::mem::size_of::<f32>() + chunk_output.1.fixed_size().unwrap())
     }
 
     fn apply(
@@ -175,15 +173,17 @@ impl FilterTraits for Gaussian {
     ) -> Result<(), FilterError> {
         assert_eq!(output.shape(), input.shape());
 
-        let chunks = ArraySubset::new_with_shape(output.chunk_grid_shape().clone());
+        let chunks = ArraySubset::new_with_shape(output.chunk_grid_shape().to_vec());
         let progress = Progress::new(chunks.num_elements_usize(), progress_callback);
 
         let chunk_limit = if let Some(chunk_limit) = self.chunk_limit {
             chunk_limit
         } else {
+            let input_chunk_shape = input.chunk_shape(&vec![0; input.dimensionality()])?;
+            let output_chunk_shape = output.chunk_shape(&vec![0; input.dimensionality()])?;
             calculate_chunk_limit(self.memory_per_chunk(
-                &input.chunk_array_representation(&vec![0; input.dimensionality()])?,
-                &output.chunk_array_representation(&vec![0; input.dimensionality()])?,
+                (&input_chunk_shape, input.data_type(), input.fill_value()),
+                (&output_chunk_shape, output.data_type(), output.fill_value()),
             ))?
         };
 

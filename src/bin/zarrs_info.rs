@@ -149,7 +149,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&DataType {
-                        data_type: array.data_type().metadata()
+                        data_type: array.named_data_type().metadata()
                     })?
                 );
             }

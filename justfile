@@ -10,8 +10,8 @@ build:
 
 # Run tests.
 test:
-    cargo +{{toolchain}} test
-    cargo +{{toolchain}} test --examples
+    cargo +{{toolchain}} test --all-features
+    cargo +{{toolchain}} test --all-features --examples
 
 # Format the code.
 fmt:
@@ -23,7 +23,7 @@ doc:
 
 # Run clippy.
 clippy:
-    cargo +{{toolchain}} clippy -- -D warnings
+    cargo +{{toolchain}} clippy --all-features -- -D warnings
 
 # Run all checks.
 check: build test clippy doc

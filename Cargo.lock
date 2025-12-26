@@ -236,9 +236,9 @@ checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
 
 [[package]]
 name = "cc"
-version = "1.2.50"
+version = "1.2.51"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f50d563227a1c37cc0a263f64eca3334388c01c5e4c4861a9def205c614383c"
+checksum = "7a0aeaff4ff1a90589618835a598e545176939b97874f7abc7851caa0618f203"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -530,9 +530,9 @@ checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a3076410a55c90011c298b04d0cfa770b00fa04e1e3c97d3f6c9de105a03844"
+checksum = "645cbb3a84e60b7531617d5ae4e57f7e27308f6445f5abf653209ea76dec8dff"
 
 [[package]]
 name = "flate2"
@@ -985,9 +985,9 @@ checksum = "7ee5b5339afb4c41626dde77b7a611bd4f2c202b897852b4bcf5d03eddc61010"
 
 [[package]]
 name = "jiff"
-version = "0.2.16"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49cce2b81f2098e7e3efc35bc2e0a6b7abec9d34128283d7a26fa8f32a6dbb35"
+checksum = "a87d9b8105c23642f50cbbae03d1f75d8422c5cb98ce7ee9271f7ff7505be6b8"
 dependencies = [
  "jiff-static",
  "jiff-tzdb-platform",
@@ -1000,9 +1000,9 @@ dependencies = [
 
 [[package]]
 name = "jiff-static"
-version = "0.2.16"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "980af8b43c3ad5d8d349ace167ec8170839f753a42d233ba19e08afe1850fa69"
+checksum = "b787bebb543f8969132630c51fd0afab173a86c6abae56ff3b9e5e3e3f9f6e58"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1757,16 +1757,16 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.146"
+version = "1.0.147"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "217ca874ae0207aac254aa02c957ded05585a90892cc8d87f9e5fa49669dadd8"
+checksum = "6af14725505314343e673e9ecb7cd7e8a36aa9791eb936235a3567cc31447ae4"
 dependencies = [
  "indexmap",
  "itoa",
  "memchr",
- "ryu",
  "serde",
  "serde_core",
+ "zmij",
 ]
 
 [[package]]
@@ -1901,9 +1901,9 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 
 [[package]]
 name = "tempfile"
-version = "3.23.0"
+version = "3.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d31c77bdf42a745371d260a26ca7163f1e0924b64afa0b688e61b5a9fa02f16"
+checksum = "655da9c7eb6305c55742045d5a8d2037996d61d8de95806335c7c86ce0f82e9c"
 dependencies = [
  "fastrand",
  "getrandom 0.3.4",
@@ -2558,8 +2558,9 @@ dependencies = [
 
 [[package]]
 name = "zarrs"
-version = "0.23.0-dev"
-source = "git+https://github.com/zarrs/zarrs.git?rev=4a49c12a#4a49c12a2a8d63514cd4f8ba2713a6f683026ef2"
+version = "0.23.0-beta.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef8be198522849b756a7a46285b36433b80cb67e91a65effd5c8426e89c723cb"
 dependencies = [
  "async-generic",
  "async-lock",
@@ -2607,7 +2608,8 @@ dependencies = [
 [[package]]
 name = "zarrs_chunk_grid"
 version = "0.1.0"
-source = "git+https://github.com/zarrs/zarrs.git?rev=4a49c12a#4a49c12a2a8d63514cd4f8ba2713a6f683026ef2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61282f8f0d1cbce27a86a3e3c7d00e2f1acd26c5d69deeb1f6b0fcd8cc9c9cff"
 dependencies = [
  "derive_more",
  "half",
@@ -2623,7 +2625,8 @@ dependencies = [
 [[package]]
 name = "zarrs_data_type"
 version = "0.5.0"
-source = "git+https://github.com/zarrs/zarrs.git?rev=4a49c12a#4a49c12a2a8d63514cd4f8ba2713a6f683026ef2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c249b135bf8d8c61e8331ef828d6056b9edb946b669fd3fce5f4473b76d9f92b"
 dependencies = [
  "derive_more",
  "half",
@@ -2637,7 +2640,8 @@ dependencies = [
 [[package]]
 name = "zarrs_filesystem"
 version = "0.3.6"
-source = "git+https://github.com/zarrs/zarrs.git?rev=4a49c12a#4a49c12a2a8d63514cd4f8ba2713a6f683026ef2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6605bf47c71b8b87396550b9ae3f234fbac54145eafc1888460cc3d66560b60"
 dependencies = [
  "bytes",
  "derive_more",
@@ -2654,7 +2658,8 @@ dependencies = [
 [[package]]
 name = "zarrs_metadata"
 version = "0.7.0"
-source = "git+https://github.com/zarrs/zarrs.git?rev=4a49c12a#4a49c12a2a8d63514cd4f8ba2713a6f683026ef2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f91ecbbe61f538d546df1d3c4f31db62e95eecdc4b3f6b7a9402d9aaa137338b"
 dependencies = [
  "derive_more",
  "half",
@@ -2667,7 +2672,8 @@ dependencies = [
 [[package]]
 name = "zarrs_metadata_ext"
 version = "0.3.0"
-source = "git+https://github.com/zarrs/zarrs.git?rev=4a49c12a#4a49c12a2a8d63514cd4f8ba2713a6f683026ef2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "227805f98a22269709e5855d20b0c210f6ddbb84bc7b14d78c0ea9f309b96a6b"
 dependencies = [
  "derive_more",
  "half",
@@ -2696,8 +2702,9 @@ dependencies = [
 
 [[package]]
 name = "zarrs_plugin"
-version = "0.2.2"
-source = "git+https://github.com/zarrs/zarrs.git?rev=4a49c12a#4a49c12a2a8d63514cd4f8ba2713a6f683026ef2"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da996f69dd0f1a22486cc9a25081dbd382034bed2659e04fb4bb7a57da5da227"
 dependencies = [
  "thiserror",
 ]
@@ -2705,7 +2712,8 @@ dependencies = [
 [[package]]
 name = "zarrs_registry"
 version = "0.1.9"
-source = "git+https://github.com/zarrs/zarrs.git?rev=4a49c12a#4a49c12a2a8d63514cd4f8ba2713a6f683026ef2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82282c3a6b1be79662d92594319584c6efee313654fd6cee59d5b958497a4e1c"
 dependencies = [
  "regex",
 ]
@@ -2713,7 +2721,8 @@ dependencies = [
 [[package]]
 name = "zarrs_storage"
 version = "0.4.0"
-source = "git+https://github.com/zarrs/zarrs.git?rev=4a49c12a#4a49c12a2a8d63514cd4f8ba2713a6f683026ef2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bc1037a8fa8c44ccb8f5c6c85753a63ddf296fb43280f28150f0f29fda8d301"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -2831,6 +2840,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "zmij"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0095ecd462946aa3927d9297b63ef82fb9a5316d7a37d134eeb36e58228615a"
 
 [[package]]
 name = "zstd"

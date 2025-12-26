@@ -7,8 +7,8 @@ use clap::Parser;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
     array::{
-        codec::CodecOptionsBuilder, ArrayBytes, ArrayIndicesTinyVec, ArrayShardedExt,
-        ArrayShardedReadableExt, ArrayShardedReadableExtCache, ChunkRepresentation,
+        codec::CodecOptions, ArrayBytes, ArrayIndicesTinyVec, ArrayShardedExt,
+        ArrayShardedReadableExt, ArrayShardedReadableExtCache,
     },
     array_subset::ArraySubset,
     filesystem::{FilesystemStore, FilesystemStoreOptions},
@@ -87,22 +87,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let inner_chunks = ArraySubset::new_with_shape(array.inner_chunk_grid_shape().clone());
         let inner_chunk_indices = inner_chunks.indices();
-        let inner_chunk_representation = ChunkRepresentation::new(
-            inner_chunk_shape.to_vec(),
-            array.data_type().clone(),
-            array.fill_value().clone(),
-        )?;
         let (chunks_concurrent_limit, codec_concurrent_target) =
             calculate_chunk_and_codec_concurrency(
                 concurrent_target,
                 args.concurrent_chunks,
                 &array.codecs(),
                 inner_chunks.num_elements_usize(),
-                &inner_chunk_representation,
+                &inner_chunk_shape,
+                array.data_type(),
             );
-        let codec_options = CodecOptionsBuilder::new()
-            .concurrent_target(codec_concurrent_target)
-            .build();
+        let codec_options = CodecOptions::default().with_concurrent_target(codec_concurrent_target);
         let shard_index_cache = ArrayShardedReadableExtCache::new(&array);
 
         rayon_iter_concurrent_limit::iter_concurrent_limit!(
@@ -122,21 +116,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         );
     } else {
-        let chunks = ArraySubset::new_with_shape(array.chunk_grid_shape().clone());
+        let chunks = ArraySubset::new_with_shape(array.chunk_grid_shape().to_vec());
         let chunk_indices = chunks.indices();
-        let chunk_representation =
-            array.chunk_array_representation(&vec![0; array.chunk_grid().dimensionality()])?;
+        let chunk_shape = array.chunk_shape(&vec![0; array.chunk_grid().dimensionality()])?;
         let (chunks_concurrent_limit, codec_concurrent_target) =
             calculate_chunk_and_codec_concurrency(
                 concurrent_target,
                 args.concurrent_chunks,
                 &array.codecs(),
                 chunks.num_elements_usize(),
-                &chunk_representation,
+                &chunk_shape,
+                array.data_type(),
             );
-        let codec_options = CodecOptionsBuilder::new()
-            .concurrent_target(codec_concurrent_target)
-            .build();
+        let codec_options = CodecOptions::default().with_concurrent_target(codec_concurrent_target);
 
         // println!("chunks_concurrent_limit {chunks_concurrent_limit:?} codec_concurrent_target {codec_concurrent_target:?}");
         // NOTE: Could init memory per split with for_each_init and then reuse it with retrieve_chunk_into_array_view_opt.
