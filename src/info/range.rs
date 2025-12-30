@@ -2,8 +2,9 @@ use half::{bf16, f16};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon_iter_concurrent_limit::iter_concurrent_limit;
 use zarrs::{
-    array::{Array, ArrayError, ArrayIndicesTinyVec, DataType, ElementOwned},
+    array::{data_type, Array, ArrayError, ArrayIndicesTinyVec, ElementOwned},
     array_subset::ArraySubset,
+    plugin::ExtensionIdentifier,
     storage::ReadableStorageTraits,
 };
 
@@ -12,87 +13,84 @@ pub fn calculate_range<TStorage: ReadableStorageTraits + 'static>(
     array: &Array<TStorage>,
     chunk_limit: usize,
 ) -> Result<(serde_json::Number, serde_json::Number), ArrayError> {
-    match array.data_type() {
-        DataType::Int8 => {
+    match array.data_type().identifier() {
+        data_type::Int8DataType::IDENTIFIER => {
             let (min, max) = calculate_range_t(array, i8::MIN, i8::MAX, chunk_limit)?;
             let min = serde_json::Number::from(min);
             let max = serde_json::Number::from(max);
             Ok((min, max))
         }
-        DataType::Int16 => {
+        data_type::Int16DataType::IDENTIFIER => {
             let (min, max) = calculate_range_t(array, i16::MIN, i16::MAX, chunk_limit)?;
             let min = serde_json::Number::from(min);
             let max = serde_json::Number::from(max);
             Ok((min, max))
         }
-        DataType::Int32 => {
+        data_type::Int32DataType::IDENTIFIER => {
             let (min, max) = calculate_range_t(array, i32::MIN, i32::MAX, chunk_limit)?;
             let min = serde_json::Number::from(min);
             let max = serde_json::Number::from(max);
             Ok((min, max))
         }
-        DataType::Int64 => {
+        data_type::Int64DataType::IDENTIFIER => {
             let (min, max) = calculate_range_t(array, i64::MIN, i64::MAX, chunk_limit)?;
             let min = serde_json::Number::from(min);
             let max = serde_json::Number::from(max);
             Ok((min, max))
         }
-        DataType::UInt8 => {
+        data_type::UInt8DataType::IDENTIFIER => {
             let (min, max) = calculate_range_t(array, u8::MIN, u8::MAX, chunk_limit)?;
             let min = serde_json::Number::from(min);
             let max = serde_json::Number::from(max);
             Ok((min, max))
         }
-        DataType::UInt16 => {
+        data_type::UInt16DataType::IDENTIFIER => {
             let (min, max) = calculate_range_t(array, u16::MIN, u16::MAX, chunk_limit)?;
             let min = serde_json::Number::from(min);
             let max = serde_json::Number::from(max);
             Ok((min, max))
         }
-        DataType::UInt32 => {
+        data_type::UInt32DataType::IDENTIFIER => {
             let (min, max) = calculate_range_t(array, u32::MIN, u32::MAX, chunk_limit)?;
             let min = serde_json::Number::from(min);
             let max = serde_json::Number::from(max);
             Ok((min, max))
         }
-        DataType::UInt64 => {
+        data_type::UInt64DataType::IDENTIFIER => {
             let (min, max) = calculate_range_t(array, u64::MIN, u64::MAX, chunk_limit)?;
             let min = serde_json::Number::from(min);
             let max = serde_json::Number::from(max);
             Ok((min, max))
         }
-        DataType::Float16 => {
+        data_type::Float16DataType::IDENTIFIER => {
             let (min, max) =
                 calculate_range_t(array, f16::NEG_INFINITY, f16::INFINITY, chunk_limit)?;
             let min = serde_json::Number::from_f64(min.to_f64()).unwrap();
             let max = serde_json::Number::from_f64(max.to_f64()).unwrap();
             Ok((min, max))
         }
-        DataType::BFloat16 => {
+        data_type::BFloat16DataType::IDENTIFIER => {
             let (min, max) =
                 calculate_range_t(array, bf16::NEG_INFINITY, bf16::INFINITY, chunk_limit)?;
             let min = serde_json::Number::from_f64(min.to_f64()).unwrap();
             let max = serde_json::Number::from_f64(max.to_f64()).unwrap();
             Ok((min, max))
         }
-        DataType::Float32 => {
+        data_type::Float32DataType::IDENTIFIER => {
             let (min, max) =
                 calculate_range_t(array, f32::NEG_INFINITY, f32::INFINITY, chunk_limit)?;
             let min = serde_json::Number::from_f64(min as f64).unwrap();
             let max = serde_json::Number::from_f64(max as f64).unwrap();
             Ok((min, max))
         }
-        DataType::Float64 => {
+        data_type::Float64DataType::IDENTIFIER => {
             let (min, max) =
                 calculate_range_t(array, f64::NEG_INFINITY, f64::INFINITY, chunk_limit)?;
             let min = serde_json::Number::from_f64(min).unwrap();
             let max = serde_json::Number::from_f64(max).unwrap();
             Ok((min, max))
         }
-        DataType::Bool | DataType::Complex64 | DataType::Complex128 | DataType::RawBits(_) => {
-            unimplemented!("Data type not supported")
-        }
-        _ => unimplemented!("Data type not supported"),
+        id => unimplemented!("Data type not supported: {}", id),
     }
 }
 

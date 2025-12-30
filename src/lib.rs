@@ -18,6 +18,7 @@ use progress::{Progress, ProgressCallback};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon_iter_concurrent_limit::iter_concurrent_limit;
 use serde::{Deserialize, Serialize};
+use zarrs::plugin::ExtensionIdentifier;
 use zarrs::{
     array::{
         chunk_grid::RegularChunkGrid,
@@ -27,6 +28,11 @@ use zarrs::{
             NamedArrayToBytesCodec, NamedBytesToBytesCodec, ShardingCodec,
         },
         concurrency::RecommendedConcurrency,
+        data_type::{
+            BFloat16DataType, BoolDataType, Float16DataType, Float32DataType, Float64DataType,
+            Int16DataType, Int32DataType, Int64DataType, Int8DataType, UInt16DataType,
+            UInt32DataType, UInt64DataType, UInt8DataType,
+        },
         Array, ArrayBuilder, ArrayError, ArrayIndicesTinyVec, ArrayShardedExt, ChunkCache,
         ChunkCacheDecodedLruChunkLimit, ChunkCacheDecodedLruChunkLimitThreadLocal,
         ChunkCacheDecodedLruSizeLimit, ChunkCacheDecodedLruSizeLimitThreadLocal, ChunkShape,
@@ -35,7 +41,6 @@ use zarrs::{
     array_subset::{ArraySubset, IncompatibleDimensionalityError},
     config::global_config,
     metadata::v3::MetadataV3,
-    registry::ExtensionAliasesCodecV3,
     storage::{ReadableStorageTraits, ReadableWritableListableStorageTraits},
 };
 
@@ -177,17 +182,10 @@ pub fn get_array_builder(
                 serde_json::from_str(array_to_array_codecs.as_str()).unwrap();
             let mut codecs = Vec::with_capacity(metadatas.len());
             for metadata in metadatas {
-                codecs.push(
-                    match Codec::from_metadata(
-                        &metadata,
-                        zarrs::config::global_config().codec_aliases_v3(),
-                    )
-                    .unwrap()
-                    {
-                        Codec::ArrayToArray(codec) => codec,
-                        _ => panic!("Must be a bytes to bytes codec"),
-                    },
-                );
+                codecs.push(match Codec::from_metadata(&metadata).unwrap() {
+                    Codec::ArrayToArray(codec) => codec,
+                    _ => panic!("Must be an array to array codec"),
+                });
             }
             codecs
         },
@@ -201,11 +199,9 @@ pub fn get_array_builder(
         },
         |array_codec| {
             let metadata = MetadataV3::try_from(array_codec.as_str()).unwrap();
-            match Codec::from_metadata(&metadata, zarrs::config::global_config().codec_aliases_v3())
-                .unwrap()
-            {
+            match Codec::from_metadata(&metadata).unwrap() {
                 Codec::ArrayToBytes(codec) => codec,
-                _ => panic!("Must be a arrayc to array codec"),
+                _ => panic!("Must be an array to bytes codec"),
             }
         },
     );
@@ -218,17 +214,10 @@ pub fn get_array_builder(
                 serde_json::from_str(bytes_to_bytes_codecs.as_str()).unwrap();
             let mut codecs = Vec::with_capacity(metadatas.len());
             for metadata in metadatas {
-                codecs.push(
-                    match Codec::from_metadata(
-                        &metadata,
-                        zarrs::config::global_config().codec_aliases_v3(),
-                    )
-                    .unwrap()
-                    {
-                        Codec::BytesToBytes(codec) => codec,
-                        _ => panic!("Must be a bytes to bytes codec"),
-                    },
-                );
+                codecs.push(match Codec::from_metadata(&metadata).unwrap() {
+                    Codec::BytesToBytes(codec) => codec,
+                    _ => panic!("Must be a bytes to bytes codec"),
+                });
             }
             codecs
         },
@@ -447,7 +436,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
         array_to_array_codecs,
         array_array_to_bytes_codec,
         bytes_to_bytes_codecs,
-    ) = if array_to_bytes_identifier == zarrs::registry::codec::SHARDING {
+    ) = if array_to_bytes_identifier == ShardingCodec::IDENTIFIER {
         let sharding_configuration = array_to_bytes_codec
             .configuration(&CodecMetadataOptions::default())
             .unwrap();
@@ -462,8 +451,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
             .collect::<Vec<_>>();
         let codecs: Vec<MetadataV3> =
             serde_json::from_value(sharding_configuration["codecs"].clone()).unwrap();
-        let codec_chain =
-            CodecChain::from_metadata(&codecs, &ExtensionAliasesCodecV3::default()).unwrap();
+        let codec_chain = CodecChain::from_metadata(&codecs).unwrap();
         let array_to_array_codecs = codec_chain.array_to_array_codecs().to_vec();
         let array_to_bytes_codec = codec_chain.array_to_bytes_codec().clone();
         let bytes_to_bytes_codecs = codec_chain.bytes_to_bytes_codecs().to_vec();
@@ -538,12 +526,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
                 serde_json::from_str(array_to_array_codecs.as_str()).unwrap();
             let mut codecs = Vec::with_capacity(metadatas.len());
             for metadata in metadatas {
-                let codec = match Codec::from_metadata(
-                    &metadata,
-                    zarrs::config::global_config().codec_aliases_v3(),
-                )
-                .unwrap()
-                {
+                let codec = match Codec::from_metadata(&metadata).unwrap() {
                     Codec::ArrayToArray(codec) => codec,
                     _ => panic!("Must be an array to array codec"),
                 };
@@ -561,12 +544,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
         array_array_to_bytes_codec,
         |array_codec| {
             let metadata = MetadataV3::try_from(array_codec.as_str()).unwrap();
-            let codec = match Codec::from_metadata(
-                &metadata,
-                zarrs::config::global_config().codec_aliases_v3(),
-            )
-            .unwrap()
-            {
+            let codec = match Codec::from_metadata(&metadata).unwrap() {
                 Codec::ArrayToBytes(codec) => codec,
                 _ => panic!("Must be an array to bytes codec"),
             };
@@ -582,12 +560,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
                 serde_json::from_str(bytes_to_bytes_codecs.as_str()).unwrap();
             let mut codecs = Vec::with_capacity(metadatas.len());
             for metadata in metadatas {
-                let codec = match Codec::from_metadata(
-                    &metadata,
-                    zarrs::config::global_config().codec_aliases_v3(),
-                )
-                .unwrap()
-                {
+                let codec = match Codec::from_metadata(&metadata).unwrap() {
                     Codec::BytesToBytes(codec) => codec,
                     _ => panic!("Must be a bytes to bytes codec"),
                 };
@@ -626,11 +599,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
     }
 
     let data_type = if let Some(data_type) = &encoding_args.data_type {
-        let data_type = NamedDataType::from_metadata(
-            data_type,
-            zarrs::config::global_config().data_type_aliases_v3(),
-        )
-        .unwrap();
+        let data_type = NamedDataType::try_from(data_type).unwrap();
         array_builder.data_type(data_type.clone());
         data_type
     } else {
@@ -648,11 +617,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
         array_builder.fill_value(fill_value);
     } else if let Some(data_type) = &encoding_args.data_type {
         // The data type was changed, but no fill value supplied, so just cast it
-        let data_type = NamedDataType::from_metadata(
-            data_type,
-            zarrs::config::global_config().data_type_aliases_v3(),
-        )
-        .unwrap();
+        let data_type = NamedDataType::try_from(data_type).unwrap();
         let fill_value = convert_fill_value(array.data_type(), array.fill_value(), &data_type);
         array_builder.fill_value(fill_value);
     }
@@ -722,55 +687,55 @@ fn convert_and_store_subset(
     }
 
     macro_rules! convert_from_input {
-        ( $t_out:ty, [$( ( $data_type:ident, $t_in:ty ) ),* ]) => {
-            match array_in.data_type() {
-                $(DataType::$data_type => { convert_elements!($t_in, $t_out) } ,)*
-                _ => anyhow::bail!("Unsupported input data type: {}", array_in.data_type())
+        ( $t_out:ty, [$( ( $dt_type:ty, $t_in:ty ) ),* ]) => {
+            {
+                let dt_id = array_in.data_type().identifier();
+                $(if dt_id == <$dt_type>::IDENTIFIER { convert_elements!($t_in, $t_out) } else)*
+                { anyhow::bail!("Unsupported input data type: {}", array_in.data_type().identifier()) }
             }
         };
     }
 
     macro_rules! convert_to_output {
-        ([$( ( $data_type:ident, $type_out:ty ) ),* ]) => {
-            match array_out.data_type() {
-                $(
-                    DataType::$data_type => {
-                        convert_from_input!($type_out, [
-                            (Bool, u8),
-                            (Int8, i8),
-                            (Int16, i16),
-                            (Int32, i32),
-                            (Int64, i64),
-                            (UInt8, u8),
-                            (UInt16, u16),
-                            (UInt32, u32),
-                            (UInt64, u64),
-                            (BFloat16, half::bf16),
-                            (Float16, half::f16),
-                            (Float32, f32),
-                            (Float64, f64)
-                        ]
-                    )}
-                ,)*
-                _ => anyhow::bail!("Unsupported output data type: {}", array_out.data_type())
+        ([$( ( $dt_type:ty, $type_out:ty ) ),* ]) => {
+            {
+                let dt_id = array_out.data_type().identifier();
+                $(if dt_id == <$dt_type>::IDENTIFIER {
+                    convert_from_input!($type_out, [
+                        (BoolDataType, u8),
+                        (Int8DataType, i8),
+                        (Int16DataType, i16),
+                        (Int32DataType, i32),
+                        (Int64DataType, i64),
+                        (UInt8DataType, u8),
+                        (UInt16DataType, u16),
+                        (UInt32DataType, u32),
+                        (UInt64DataType, u64),
+                        (BFloat16DataType, half::bf16),
+                        (Float16DataType, half::f16),
+                        (Float32DataType, f32),
+                        (Float64DataType, f64)
+                    ])
+                } else)*
+                { anyhow::bail!("Unsupported output data type: {}", array_out.data_type().identifier()) }
             }
         };
     }
 
     convert_to_output!([
-        (Bool, u8),
-        (Int8, i8),
-        (Int16, i16),
-        (Int32, i32),
-        (Int64, i64),
-        (UInt8, u8),
-        (UInt16, u16),
-        (UInt32, u32),
-        (UInt64, u64),
-        (BFloat16, half::bf16),
-        (Float16, half::f16),
-        (Float32, f32),
-        (Float64, f64)
+        (BoolDataType, u8),
+        (Int8DataType, i8),
+        (Int16DataType, i16),
+        (Int32DataType, i32),
+        (Int64DataType, i64),
+        (UInt8DataType, u8),
+        (UInt16DataType, u16),
+        (UInt32DataType, u32),
+        (UInt64DataType, u64),
+        (BFloat16DataType, half::bf16),
+        (Float16DataType, half::f16),
+        (Float32DataType, f32),
+        (Float64DataType, f64)
     ]);
 
     Ok(())
@@ -866,7 +831,7 @@ pub fn do_reencode(
     };
 
     let indices = chunks.indices();
-    if array_in.data_type() == array_out.data_type() {
+    if array_in.data_type().identifier() == array_out.data_type().identifier() {
         iter_concurrent_limit!(
             chunks_concurrent_limit,
             indices,
@@ -1009,53 +974,53 @@ fn convert_fill_value(
         }};
     }
     macro_rules! apply_inner {
-        ( $type_in:ty, [$( ( $data_type_out:ident, $type_out:ty ) ),* ]) => {
-            match data_type_out {
-                $(DataType::$data_type_out => { convert!($type_in, $type_out) } ,)*
-                _ => panic!()
+        ( $type_in:ty, [$( ( $dt_type_out:ty, $type_out:ty ) ),* ]) => {
+            {
+                let dt_id = data_type_out.identifier();
+                $(if dt_id == <$dt_type_out>::IDENTIFIER { convert!($type_in, $type_out) } else)*
+                { panic!("Unsupported output data type: {}", data_type_out.identifier()) }
             }
         };
     }
     macro_rules! apply_outer {
-    ([$( ( $data_type_in:ident, $type_in:ty ) ),* ]) => {
-            match data_type_in {
-                $(
-                    DataType::$data_type_in => {
-                        apply_inner!($type_in, [
-                            (Bool, u8),
-                            (Int8, i8),
-                            (Int16, i16),
-                            (Int32, i32),
-                            (Int64, i64),
-                            (UInt8, u8),
-                            (UInt16, u16),
-                            (UInt32, u32),
-                            (UInt64, u64),
-                            (BFloat16, half::bf16),
-                            (Float16, half::f16),
-                            (Float32, f32),
-                            (Float64, f64)
-                        ]
-                    )}
-                ,)*
-                _ => panic!()
+        ([$( ( $dt_type_in:ty, $type_in:ty ) ),* ]) => {
+            {
+                let dt_id = data_type_in.identifier();
+                $(if dt_id == <$dt_type_in>::IDENTIFIER {
+                    apply_inner!($type_in, [
+                        (BoolDataType, u8),
+                        (Int8DataType, i8),
+                        (Int16DataType, i16),
+                        (Int32DataType, i32),
+                        (Int64DataType, i64),
+                        (UInt8DataType, u8),
+                        (UInt16DataType, u16),
+                        (UInt32DataType, u32),
+                        (UInt64DataType, u64),
+                        (BFloat16DataType, half::bf16),
+                        (Float16DataType, half::f16),
+                        (Float32DataType, f32),
+                        (Float64DataType, f64)
+                    ])
+                } else)*
+                { panic!("Unsupported input data type: {}", data_type_in.identifier()) }
             }
         };
     }
     apply_outer!([
-        (Bool, u8),
-        (Int8, i8),
-        (Int16, i16),
-        (Int32, i32),
-        (Int64, i64),
-        (UInt8, u8),
-        (UInt16, u16),
-        (UInt32, u32),
-        (UInt64, u64),
-        (BFloat16, half::bf16),
-        (Float16, half::f16),
-        (Float32, f32),
-        (Float64, f64)
+        (BoolDataType, u8),
+        (Int8DataType, i8),
+        (Int16DataType, i16),
+        (Int32DataType, i32),
+        (Int64DataType, i64),
+        (UInt8DataType, u8),
+        (UInt16DataType, u16),
+        (UInt32DataType, u32),
+        (UInt64DataType, u64),
+        (BFloat16DataType, half::bf16),
+        (Float16DataType, half::f16),
+        (Float32DataType, f32),
+        (Float64DataType, f64)
     ])
 }
 

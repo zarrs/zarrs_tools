@@ -3,9 +3,10 @@ use num_traits::AsPrimitive;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{Array, ArrayIndicesTinyVec, DataType},
+    array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
+    plugin::ExtensionIdentifier,
 };
 
 use crate::{
@@ -78,23 +79,27 @@ impl FilterTraits for Clamp {
         chunk_input: ChunkInfo,
         chunk_output: ChunkInfo,
     ) -> Result<(), FilterError> {
+        const SUPPORTED_TYPES: &[&str] = &[
+            data_type::BoolDataType::IDENTIFIER,
+            data_type::Int8DataType::IDENTIFIER,
+            data_type::Int16DataType::IDENTIFIER,
+            data_type::Int32DataType::IDENTIFIER,
+            data_type::Int64DataType::IDENTIFIER,
+            data_type::UInt8DataType::IDENTIFIER,
+            data_type::UInt16DataType::IDENTIFIER,
+            data_type::UInt32DataType::IDENTIFIER,
+            data_type::UInt64DataType::IDENTIFIER,
+            data_type::Float16DataType::IDENTIFIER,
+            data_type::Float32DataType::IDENTIFIER,
+            data_type::Float64DataType::IDENTIFIER,
+            data_type::BFloat16DataType::IDENTIFIER,
+        ];
         for data_type in [chunk_input.1, chunk_output.1] {
-            match data_type {
-                DataType::Bool
-                | DataType::Int8
-                | DataType::Int16
-                | DataType::Int32
-                | DataType::Int64
-                | DataType::UInt8
-                | DataType::UInt16
-                | DataType::UInt32
-                | DataType::UInt64
-                | DataType::Float16
-                | DataType::Float32
-                | DataType::Float64
-                | DataType::BFloat16 => {}
-                _ => Err(UnsupportedDataTypeError::from(data_type.to_string()))?,
-            };
+            if !SUPPORTED_TYPES.contains(&data_type.identifier()) {
+                Err(UnsupportedDataTypeError::from(
+                    data_type.identifier().to_string(),
+                ))?;
+            }
         }
         Ok(())
     }
@@ -132,9 +137,9 @@ impl FilterTraits for Clamp {
             try_for_each,
             |chunk_indices: ArrayIndicesTinyVec| {
                 macro_rules! apply_input {
-                    ( $t_out:ty, [$( ( $data_type_in:ident, $t_in:ty ) ),* ]) => {
-                        match input.data_type() {
-                            $(DataType::$data_type_in => {
+                    ( $t_out:ty, [$( ( $dt_in:ty, $t_in:ty ) ),* ]) => {
+                        match input.data_type().identifier() {
+                            $(<$dt_in>::IDENTIFIER => {
                                 let input_output_subset = output.chunk_subset_bounded(&chunk_indices).unwrap();
                                 let mut elements_in: Vec<$t_in> =
                                     progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
@@ -145,51 +150,49 @@ impl FilterTraits for Clamp {
                                 progress.write(|| {
                                     output.store_array_subset(&input_output_subset, elements_out)
                                 })?;
-                            } ,)*
-                            _ => panic!()
+                            },)*
+                            id => panic!("Unsupported input data type: {}", id)
                         }
                     };
                 }
                 macro_rules! apply_output {
-                    ([$( ( $data_type_out:ident, $type_out:ty ) ),* ]) => {
-                            match output.data_type() {
-                                $(
-                                    DataType::$data_type_out => {
-                                        apply_input!($type_out, [
-                                            (Bool, u8),
-                                            (Int8, i8),
-                                            (Int16, i16),
-                                            (Int32, i32),
-                                            (Int64, i64),
-                                            (UInt8, u8),
-                                            (UInt16, u16),
-                                            (UInt32, u32),
-                                            (UInt64, u64),
-                                            (BFloat16, half::bf16),
-                                            (Float16, half::f16),
-                                            (Float32, f32),
-                                            (Float64, f64)
-                                        ]
-                                    )}
-                                ,)*
-                                _ => panic!()
-                            }
-                        };
-                    }
+                    ([$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
+                        match output.data_type().identifier() {
+                            $(<$dt_out>::IDENTIFIER => {
+                                apply_input!($type_out, [
+                                    (data_type::BoolDataType, u8),
+                                    (data_type::Int8DataType, i8),
+                                    (data_type::Int16DataType, i16),
+                                    (data_type::Int32DataType, i32),
+                                    (data_type::Int64DataType, i64),
+                                    (data_type::UInt8DataType, u8),
+                                    (data_type::UInt16DataType, u16),
+                                    (data_type::UInt32DataType, u32),
+                                    (data_type::UInt64DataType, u64),
+                                    (data_type::BFloat16DataType, half::bf16),
+                                    (data_type::Float16DataType, half::f16),
+                                    (data_type::Float32DataType, f32),
+                                    (data_type::Float64DataType, f64)
+                                ])
+                            },)*
+                            id => panic!("Unsupported output data type: {}", id)
+                        }
+                    };
+                }
                 apply_output!([
-                    (Bool, u8),
-                    (Int8, i8),
-                    (Int16, i16),
-                    (Int32, i32),
-                    (Int64, i64),
-                    (UInt8, u8),
-                    (UInt16, u16),
-                    (UInt32, u32),
-                    (UInt64, u64),
-                    (BFloat16, half::bf16),
-                    (Float16, half::f16),
-                    (Float32, f32),
-                    (Float64, f64)
+                    (data_type::BoolDataType, u8),
+                    (data_type::Int8DataType, i8),
+                    (data_type::Int16DataType, i16),
+                    (data_type::Int32DataType, i32),
+                    (data_type::Int64DataType, i64),
+                    (data_type::UInt8DataType, u8),
+                    (data_type::UInt16DataType, u16),
+                    (data_type::UInt32DataType, u32),
+                    (data_type::UInt64DataType, u64),
+                    (data_type::BFloat16DataType, half::bf16),
+                    (data_type::Float16DataType, half::f16),
+                    (data_type::Float32DataType, f32),
+                    (data_type::Float64DataType, f64)
                 ]);
 
                 progress.next();

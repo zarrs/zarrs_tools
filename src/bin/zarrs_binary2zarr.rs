@@ -9,40 +9,62 @@ use zarrs::{
     array::{
         codec::{ArrayCodecTraits, CodecOptions},
         concurrency::RecommendedConcurrency,
-        Array, DataType, Endianness,
+        data_type, Array, DataTypeExt, Endianness, NamedDataType,
     },
     array_subset::ArraySubset,
     config::global_config,
     filesystem::{FilesystemStore, FilesystemStoreOptions},
     metadata::v3::MetadataV3,
+    plugin::ExtensionIdentifier,
     storage::ListableStorageTraits,
 };
 
+use zarrs::array::DataType;
+
 fn reverse_endianness(v: &mut [u8], data_type: &DataType) -> anyhow::Result<()> {
-    match data_type {
-        DataType::Bool | DataType::Int8 | DataType::UInt8 | DataType::RawBits(_) => {}
-        DataType::Int16 | DataType::UInt16 | DataType::Float16 | DataType::BFloat16 => {
-            let swap = |chunk: &mut [u8]| {
-                let bytes = u16::from_ne_bytes(unsafe { chunk.try_into().unwrap_unchecked() });
-                chunk.copy_from_slice(bytes.swap_bytes().to_ne_bytes().as_slice());
-            };
-            v.chunks_exact_mut(2).for_each(swap);
+    match data_type.identifier() {
+        // 1-byte types: no swap needed
+        data_type::BoolDataType::IDENTIFIER
+        | data_type::Int8DataType::IDENTIFIER
+        | data_type::UInt8DataType::IDENTIFIER
+        | data_type::RawBitsDataType::IDENTIFIER => {}
+
+        // 2-byte types
+        data_type::Int16DataType::IDENTIFIER
+        | data_type::UInt16DataType::IDENTIFIER
+        | data_type::Float16DataType::IDENTIFIER
+        | data_type::BFloat16DataType::IDENTIFIER => {
+            let (chunks, _remainder) = v.as_chunks_mut::<2>();
+            for chunk in chunks {
+                let bytes = u16::from_ne_bytes(*chunk);
+                *chunk = bytes.swap_bytes().to_ne_bytes();
+            }
         }
-        DataType::Int32 | DataType::UInt32 | DataType::Float32 | DataType::Complex64 => {
-            let swap = |chunk: &mut [u8]| {
-                let bytes = u32::from_ne_bytes(unsafe { chunk.try_into().unwrap_unchecked() });
-                chunk.copy_from_slice(bytes.swap_bytes().to_ne_bytes().as_slice());
-            };
-            v.chunks_exact_mut(4).for_each(swap);
+
+        // 4-byte types
+        data_type::Int32DataType::IDENTIFIER
+        | data_type::UInt32DataType::IDENTIFIER
+        | data_type::Float32DataType::IDENTIFIER
+        | data_type::Complex64DataType::IDENTIFIER => {
+            let (chunks, _remainder) = v.as_chunks_mut::<4>();
+            for chunk in chunks {
+                let bytes = u32::from_ne_bytes(*chunk);
+                *chunk = bytes.swap_bytes().to_ne_bytes();
+            }
         }
-        DataType::Int64 | DataType::UInt64 | DataType::Float64 | DataType::Complex128 => {
-            let swap = |chunk: &mut [u8]| {
-                let bytes = u64::from_ne_bytes(unsafe { chunk.try_into().unwrap_unchecked() });
-                chunk.copy_from_slice(bytes.swap_bytes().to_ne_bytes().as_slice());
-            };
-            v.chunks_exact_mut(8).for_each(swap);
+
+        // 8-byte types
+        data_type::Int64DataType::IDENTIFIER
+        | data_type::UInt64DataType::IDENTIFIER
+        | data_type::Float64DataType::IDENTIFIER
+        | data_type::Complex128DataType::IDENTIFIER => {
+            let (chunks, _remainder) = v.as_chunks_mut::<8>();
+            for chunk in chunks {
+                let bytes = u64::from_ne_bytes(*chunk);
+                *chunk = bytes.swap_bytes().to_ne_bytes();
+            }
         }
-        _ => anyhow::bail!("unsupported data type {data_type} for reverse_endianness"),
+        id => anyhow::bail!("unsupported data type {id} for reverse_endianness"),
     };
     Ok(())
 }
@@ -208,11 +230,7 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Get data type
-    let data_type = zarrs::array::NamedDataType::from_metadata(
-        &cli.data_type,
-        zarrs::config::global_config().data_type_aliases_v3(),
-    )
-    .unwrap();
+    let data_type = NamedDataType::try_from(&cli.data_type).unwrap();
 
     // Create storage
     let path_out = cli.out.as_path();

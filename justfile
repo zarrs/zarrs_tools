@@ -6,12 +6,11 @@ _help:
 
 # Build the project.
 build:
-    cargo +{{toolchain}} build
+    cargo +{{toolchain}} build --all-features
 
 # Run tests.
 test:
     cargo +{{toolchain}} test --all-features
-    cargo +{{toolchain}} test --all-features --examples
 
 # Format the code.
 fmt:

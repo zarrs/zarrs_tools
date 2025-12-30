@@ -16,10 +16,14 @@ use ome_zarr_metadata::v0_5::{
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
-    array::{Array, ArrayCodecTraits, ArrayIndicesTinyVec, ArrayMetadata, Element, ElementOwned},
+    array::{
+        codec::array_to_bytes::sharding::ShardingCodec, codec::ArrayCodecTraits, data_type, Array,
+        ArrayIndicesTinyVec, ArrayMetadata, Element, ElementOwned,
+    },
     array_subset::ArraySubset,
     filesystem::{FilesystemStore, FilesystemStoreOptions},
     group::{Group, GroupMetadata, GroupMetadataV3},
+    plugin::ExtensionIdentifier,
     storage::{StorePrefix, WritableStorageTraits},
 };
 use zarrs_tools::{
@@ -576,9 +580,7 @@ fn run() -> Result<(), anyhow::Error> {
         let chunk_shape = array_input.chunk_shape(&vec![0; array_input.dimensionality()])?;
         let output_shape = downsample_filter.output_shape(&array_input).unwrap();
         let mut reencoding = ZarrReencodingArgs::default();
-        if array_input.codecs().array_to_bytes_codec().identifier()
-            == zarrs::registry::codec::SHARDING
-        {
+        if array_input.codecs().array_to_bytes_codec().identifier() == ShardingCodec::IDENTIFIER {
             reencoding.shard_shape = Some(
                 std::iter::zip(&chunk_shape, &output_shape)
                     .map(|(c, s)| std::cmp::min(c.get(), *s))
@@ -750,26 +752,26 @@ fn run() -> Result<(), anyhow::Error> {
                     }};
                 }
                 macro_rules! apply {
-                    ( [$( ( $data_type_out:ident, $t:ty,  $inner:ident ) ),* ]) => {
-                        match array_input.data_type() {
-                            $(zarrs::array::DataType::$data_type_out => { $inner!($t) } ,)*
-                            _ => panic!("unsupported data type")
+                    ( [$( ( $dt:ty, $t:ty, $inner:ident ) ),* ]) => {
+                        match array_input.data_type().identifier() {
+                            $(<$dt>::IDENTIFIER => { $inner!($t) } ,)*
+                            id => panic!("unsupported data type: {}", id)
                         }
                     };
                 }
                 apply!([
-                    (Int8, i8, discrete_or_continuous),
-                    (Int16, i16, discrete_or_continuous),
-                    (Int32, i32, discrete_or_continuous),
-                    (Int64, i64, discrete_or_continuous),
-                    (UInt8, u8, discrete_or_continuous),
-                    (UInt16, u16, discrete_or_continuous),
-                    (UInt32, u32, discrete_or_continuous),
-                    (UInt64, u64, discrete_or_continuous),
-                    (BFloat16, bf16, continuous),
-                    (Float16, f16, continuous),
-                    (Float32, f32, continuous),
-                    (Float64, f64, continuous)
+                    (data_type::Int8DataType, i8, discrete_or_continuous),
+                    (data_type::Int16DataType, i16, discrete_or_continuous),
+                    (data_type::Int32DataType, i32, discrete_or_continuous),
+                    (data_type::Int64DataType, i64, discrete_or_continuous),
+                    (data_type::UInt8DataType, u8, discrete_or_continuous),
+                    (data_type::UInt16DataType, u16, discrete_or_continuous),
+                    (data_type::UInt32DataType, u32, discrete_or_continuous),
+                    (data_type::UInt64DataType, u64, discrete_or_continuous),
+                    (data_type::BFloat16DataType, bf16, continuous),
+                    (data_type::Float16DataType, f16, continuous),
+                    (data_type::Float32DataType, f32, continuous),
+                    (data_type::Float64DataType, f64, continuous)
                 ]);
 
                 progress.next();

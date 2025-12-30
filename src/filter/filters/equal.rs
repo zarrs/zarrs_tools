@@ -4,12 +4,12 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
     array::{
-        Array, ArrayIndicesTinyVec, DataType, Element, ElementOwned, FillValue,
+        data_type, Array, ArrayIndicesTinyVec, DataTypeExt, Element, ElementOwned, FillValue,
         FillValueMetadataV3, NamedDataType,
     },
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
-    registry::ExtensionAliasesDataTypeV3,
+    plugin::ExtensionIdentifier,
 };
 
 use crate::{
@@ -89,26 +89,35 @@ impl FilterTraits for Equal {
         chunk_input: ChunkInfo,
         chunk_output: ChunkInfo,
     ) -> Result<(), FilterError> {
-        match chunk_input.1 {
-            DataType::Bool
-            | DataType::Int8
-            | DataType::Int16
-            | DataType::Int32
-            | DataType::Int64
-            | DataType::UInt8
-            | DataType::UInt16
-            | DataType::UInt32
-            | DataType::UInt64
-            | DataType::Float16
-            | DataType::Float32
-            | DataType::Float64
-            | DataType::BFloat16 => {}
-            _ => Err(UnsupportedDataTypeError::from(chunk_input.1.to_string()))?,
-        };
-        match chunk_output.1 {
-            DataType::Bool | DataType::UInt8 => {}
-            _ => Err(UnsupportedDataTypeError::from(chunk_output.1.to_string()))?,
-        };
+        const SUPPORTED_INPUT_TYPES: &[&str] = &[
+            data_type::BoolDataType::IDENTIFIER,
+            data_type::Int8DataType::IDENTIFIER,
+            data_type::Int16DataType::IDENTIFIER,
+            data_type::Int32DataType::IDENTIFIER,
+            data_type::Int64DataType::IDENTIFIER,
+            data_type::UInt8DataType::IDENTIFIER,
+            data_type::UInt16DataType::IDENTIFIER,
+            data_type::UInt32DataType::IDENTIFIER,
+            data_type::UInt64DataType::IDENTIFIER,
+            data_type::Float16DataType::IDENTIFIER,
+            data_type::Float32DataType::IDENTIFIER,
+            data_type::Float64DataType::IDENTIFIER,
+            data_type::BFloat16DataType::IDENTIFIER,
+        ];
+        const SUPPORTED_OUTPUT_TYPES: &[&str] = &[
+            data_type::BoolDataType::IDENTIFIER,
+            data_type::UInt8DataType::IDENTIFIER,
+        ];
+        if !SUPPORTED_INPUT_TYPES.contains(&chunk_input.1.identifier()) {
+            Err(UnsupportedDataTypeError::from(
+                chunk_input.1.identifier().to_string(),
+            ))?;
+        }
+        if !SUPPORTED_OUTPUT_TYPES.contains(&chunk_output.1.identifier()) {
+            Err(UnsupportedDataTypeError::from(
+                chunk_output.1.identifier().to_string(),
+            ))?;
+        }
         Ok(())
     }
 
@@ -120,10 +129,7 @@ impl FilterTraits for Equal {
         &self,
         _input: &Array<FilesystemStore>,
     ) -> Option<(NamedDataType, FillValue)> {
-        Some((
-            DataType::Bool.into_named(&ExtensionAliasesDataTypeV3::default()),
-            FillValue::from(false),
-        ))
+        Some((data_type::bool().to_named(), FillValue::from(false)))
     }
 
     fn apply(
@@ -137,10 +143,7 @@ impl FilterTraits for Equal {
         let chunks = ArraySubset::new_with_shape(output.chunk_grid_shape().to_vec());
         let progress = Progress::new(chunks.num_elements_usize(), progress_callback);
 
-        let value = input
-            .data_type()
-            .fill_value_from_metadata(&self.value)
-            .unwrap();
+        let value = input.data_type().fill_value(&self.value).unwrap();
 
         let chunk_limit = if let Some(chunk_limit) = self.chunk_limit {
             chunk_limit
@@ -161,9 +164,9 @@ impl FilterTraits for Equal {
             |chunk_indices: ArrayIndicesTinyVec| {
                 let input_output_subset = output.chunk_subset_bounded(&chunk_indices).unwrap();
                 macro_rules! apply_input {
-                    ( $t_out:ty, [$( ( $data_type_in:ident, $t_in:ty ) ),* ]) => {
-                        match input.data_type() {
-                            $(DataType::$data_type_in => {
+                    ( $t_out:ty, [$( ( $dt_in:ty, $t_in:ty ) ),* ]) => {
+                        match input.data_type().identifier() {
+                            $(<$dt_in>::IDENTIFIER => {
                                 let input_elements: Vec<$t_in> =
                                     progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
 
@@ -180,40 +183,38 @@ impl FilterTraits for Equal {
 
                                 progress.next();
                                 Ok(())
-                            } ,)*
-                            _ => panic!()
+                            },)*
+                            id => panic!("Unsupported input data type: {}", id)
                         }
                     };
                 }
                 macro_rules! apply_output {
-                    ([$( ( $data_type_out:ident, $type_out:ty ) ),* ]) => {
-                            match output.data_type() {
-                                $(
-                                    DataType::$data_type_out => {
-                                        apply_input!($type_out, [
-                                            (Bool, u8),
-                                            (Int8, i8),
-                                            (Int16, i16),
-                                            (Int32, i32),
-                                            (Int64, i64),
-                                            (UInt8, u8),
-                                            (UInt16, u16),
-                                            (UInt32, u32),
-                                            (UInt64, u64),
-                                            (BFloat16, half::bf16),
-                                            (Float16, half::f16),
-                                            (Float32, f32),
-                                            (Float64, f64)
-                                        ]
-                                    )}
-                                ,)*
-                                _ => panic!()
-                            }
-                        };
-                    }
+                    ([$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
+                        match output.data_type().identifier() {
+                            $(<$dt_out>::IDENTIFIER => {
+                                apply_input!($type_out, [
+                                    (data_type::BoolDataType, u8),
+                                    (data_type::Int8DataType, i8),
+                                    (data_type::Int16DataType, i16),
+                                    (data_type::Int32DataType, i32),
+                                    (data_type::Int64DataType, i64),
+                                    (data_type::UInt8DataType, u8),
+                                    (data_type::UInt16DataType, u16),
+                                    (data_type::UInt32DataType, u32),
+                                    (data_type::UInt64DataType, u64),
+                                    (data_type::BFloat16DataType, half::bf16),
+                                    (data_type::Float16DataType, half::f16),
+                                    (data_type::Float32DataType, f32),
+                                    (data_type::Float64DataType, f64)
+                                ])
+                            },)*
+                            id => panic!("Unsupported output data type: {}", id)
+                        }
+                    };
+                }
                 apply_output!([
-                    (Bool, u8), // bool != bytemuck::Pod, but apply_chunk only stores 0 or 1, so can store as u8
-                    (UInt8, u8)
+                    (data_type::BoolDataType, u8), // bool != bytemuck::Pod, but apply_chunk only stores 0 or 1, so can store as u8
+                    (data_type::UInt8DataType, u8)
                 ])
             }
         )

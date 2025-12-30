@@ -3,7 +3,7 @@ name = "zarrs_tools"
 version = "0.8.0-dev"
 authors = ["Lachlan Deakin <ljdgit@gmail.com>"]
 edition = "2021"
-rust-version = "1.87"
+rust-version = "1.88"
 description = "Tools for creating and manipulating Zarr V3 data"
 documentation = "https://docs.rs/zarrs_tools"
 repository = "https://github.com/zarrs/zarrs_tools"
@@ -50,7 +50,7 @@ tempfile = "3.10.1"
 thiserror = "2.0.0"
 tokio = { version = "1.34.0", features = ["macros", "rt-multi-thread"] }
 unsafe_cell_slice = "0.2.1"
-zarrs = { version = "0.23.0-beta.1" }
+zarrs = { version = "0.23.0-beta.2" }
 zarrs_opendal = { version = "0.10.0" }
 
 [[bin]]

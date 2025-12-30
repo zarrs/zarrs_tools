@@ -2,8 +2,9 @@ use half::{bf16, f16};
 use num_traits::AsPrimitive;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use zarrs::{
-    array::{Array, ArrayError, ArrayIndicesTinyVec, DataType, ElementOwned},
+    array::{data_type, Array, ArrayError, ArrayIndicesTinyVec, ElementOwned},
     array_subset::ArraySubset,
+    plugin::ExtensionIdentifier,
     storage::ReadableStorageTraits,
 };
 
@@ -14,25 +15,44 @@ pub fn calculate_histogram<TStorage: ReadableStorageTraits + 'static>(
     max: f64,
     chunk_limit: usize,
 ) -> Result<(Vec<f64>, Vec<u64>), ArrayError> {
-    match array.data_type() {
-        DataType::Int8 => calculate_histogram_t::<_, i8>(array, n_bins, min, max, chunk_limit),
-        DataType::Int16 => calculate_histogram_t::<_, i16>(array, n_bins, min, max, chunk_limit),
-        DataType::Int32 => calculate_histogram_t::<_, i32>(array, n_bins, min, max, chunk_limit),
-        DataType::Int64 => calculate_histogram_t::<_, i64>(array, n_bins, min, max, chunk_limit),
-        DataType::UInt8 => calculate_histogram_t::<_, u8>(array, n_bins, min, max, chunk_limit),
-        DataType::UInt16 => calculate_histogram_t::<_, u16>(array, n_bins, min, max, chunk_limit),
-        DataType::UInt32 => calculate_histogram_t::<_, u32>(array, n_bins, min, max, chunk_limit),
-        DataType::UInt64 => calculate_histogram_t::<_, u64>(array, n_bins, min, max, chunk_limit),
-        DataType::Float16 => calculate_histogram_t::<_, f16>(array, n_bins, min, max, chunk_limit),
-        DataType::BFloat16 => {
+    match array.data_type().identifier() {
+        data_type::Int8DataType::IDENTIFIER => {
+            calculate_histogram_t::<_, i8>(array, n_bins, min, max, chunk_limit)
+        }
+        data_type::Int16DataType::IDENTIFIER => {
+            calculate_histogram_t::<_, i16>(array, n_bins, min, max, chunk_limit)
+        }
+        data_type::Int32DataType::IDENTIFIER => {
+            calculate_histogram_t::<_, i32>(array, n_bins, min, max, chunk_limit)
+        }
+        data_type::Int64DataType::IDENTIFIER => {
+            calculate_histogram_t::<_, i64>(array, n_bins, min, max, chunk_limit)
+        }
+        data_type::UInt8DataType::IDENTIFIER => {
+            calculate_histogram_t::<_, u8>(array, n_bins, min, max, chunk_limit)
+        }
+        data_type::UInt16DataType::IDENTIFIER => {
+            calculate_histogram_t::<_, u16>(array, n_bins, min, max, chunk_limit)
+        }
+        data_type::UInt32DataType::IDENTIFIER => {
+            calculate_histogram_t::<_, u32>(array, n_bins, min, max, chunk_limit)
+        }
+        data_type::UInt64DataType::IDENTIFIER => {
+            calculate_histogram_t::<_, u64>(array, n_bins, min, max, chunk_limit)
+        }
+        data_type::Float16DataType::IDENTIFIER => {
+            calculate_histogram_t::<_, f16>(array, n_bins, min, max, chunk_limit)
+        }
+        data_type::BFloat16DataType::IDENTIFIER => {
             calculate_histogram_t::<_, bf16>(array, n_bins, min, max, chunk_limit)
         }
-        DataType::Float32 => calculate_histogram_t::<_, f32>(array, n_bins, min, max, chunk_limit),
-        DataType::Float64 => calculate_histogram_t::<_, f64>(array, n_bins, min, max, chunk_limit),
-        DataType::Bool | DataType::Complex64 | DataType::Complex128 | DataType::RawBits(_) => {
-            unimplemented!("Data type not supported")
+        data_type::Float32DataType::IDENTIFIER => {
+            calculate_histogram_t::<_, f32>(array, n_bins, min, max, chunk_limit)
         }
-        _ => unimplemented!("Data type not supported"),
+        data_type::Float64DataType::IDENTIFIER => {
+            calculate_histogram_t::<_, f64>(array, n_bins, min, max, chunk_limit)
+        }
+        id => unimplemented!("Data type not supported: {}", id),
     }
 }
 

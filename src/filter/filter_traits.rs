@@ -54,11 +54,7 @@ pub trait FilterTraits {
 
         if let Some(data_type) = &reencoding_args.data_type {
             // Use explicitly set data type
-            let data_type = NamedDataType::from_metadata(
-                data_type,
-                zarrs::config::global_config().data_type_aliases_v3(),
-            )
-            .unwrap();
+            let data_type = NamedDataType::try_from(data_type).unwrap();
             if reencoding_args.fill_value.is_none() {
                 // Convert fill value to new data type if no explicit fill value set
                 reencoding_args.fill_value =

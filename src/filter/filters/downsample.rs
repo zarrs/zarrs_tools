@@ -5,9 +5,10 @@ use num_traits::{AsPrimitive, FromPrimitive};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{Array, ArrayIndicesTinyVec, DataType},
+    array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
+    plugin::ExtensionIdentifier,
 };
 
 use crate::{
@@ -128,29 +129,33 @@ impl FilterTraits for Downsample {
         chunk_input: ChunkInfo,
         chunk_output: ChunkInfo,
     ) -> Result<(), FilterError> {
+        const SUPPORTED_TYPES: &[&str] = &[
+            data_type::BoolDataType::IDENTIFIER,
+            data_type::Int8DataType::IDENTIFIER,
+            data_type::Int16DataType::IDENTIFIER,
+            data_type::Int32DataType::IDENTIFIER,
+            data_type::Int64DataType::IDENTIFIER,
+            data_type::UInt8DataType::IDENTIFIER,
+            data_type::UInt16DataType::IDENTIFIER,
+            data_type::UInt32DataType::IDENTIFIER,
+            data_type::UInt64DataType::IDENTIFIER,
+            data_type::Float16DataType::IDENTIFIER,
+            data_type::Float32DataType::IDENTIFIER,
+            data_type::Float64DataType::IDENTIFIER,
+            data_type::BFloat16DataType::IDENTIFIER,
+        ];
         for data_type in [chunk_input.1, chunk_output.1] {
-            match data_type {
-                DataType::Bool
-                | DataType::Int8
-                | DataType::Int16
-                | DataType::Int32
-                | DataType::Int64
-                | DataType::UInt8
-                | DataType::UInt16
-                | DataType::UInt32
-                | DataType::UInt64
-                | DataType::Float16
-                | DataType::Float32
-                | DataType::Float64
-                | DataType::BFloat16 => {}
-                _ => Err(UnsupportedDataTypeError::from(data_type.to_string()))?,
-            };
+            if !SUPPORTED_TYPES.contains(&data_type.identifier()) {
+                Err(UnsupportedDataTypeError::from(
+                    data_type.identifier().to_string(),
+                ))?;
+            }
         }
         Ok(())
     }
 
     fn memory_per_chunk(&self, _chunk_input: ChunkInfo, chunk_output: ChunkInfo) -> usize {
-        debug_assert_eq!(_chunk_input.1, chunk_output.1);
+        debug_assert_eq!(_chunk_input.1.identifier(), chunk_output.1.identifier());
         let input = chunk_output.1.fixed_size().unwrap()
             * usize::try_from(self.stride.iter().product::<u64>()).unwrap();
         let output = chunk_output.1.fixed_size().unwrap();
@@ -221,53 +226,51 @@ impl FilterTraits for Downsample {
                     }};
                 }
                 macro_rules! apply_input {
-                    ( $type_out:ty, [$( ( $data_type_in:ident, $type_in:ty,  $func:ident ) ),* ]) => {
-                        match input.data_type() {
-                            $(DataType::$data_type_in => { $func!($type_in, $type_out) } ,)*
-                            _ => panic!("unsupported data type")
+                    ( $type_out:ty, [$( ( $dt_in:ty, $type_in:ty, $func:ident ) ),* ]) => {
+                        match input.data_type().identifier() {
+                            $(<$dt_in>::IDENTIFIER => { $func!($type_in, $type_out) },)*
+                            id => panic!("Unsupported input data type: {}", id)
                         }
                     };
                 }
                 macro_rules! apply_output {
-                ([$( ( $data_type_out:ident, $type_out:ty ) ),* ]) => {
-                        match output.data_type() {
-                            $(
-                                DataType::$data_type_out => {
-                                    apply_input!($type_out, [
-                                        (Bool, u8, downsample),
-                                        (Int8, i8, downsample),
-                                        (Int16, i16, downsample),
-                                        (Int32, i32, downsample),
-                                        (Int64, i64, downsample),
-                                        (UInt8, u8, downsample),
-                                        (UInt16, u16, downsample),
-                                        (UInt32, u32, downsample),
-                                        (UInt64, u64, downsample),
-                                        (BFloat16, half::bf16, downsample_continuous_only),
-                                        (Float16, half::f16, downsample_continuous_only),
-                                        (Float32, f32, downsample_continuous_only),
-                                        (Float64, f64, downsample_continuous_only)
-                                    ]
-                                )}
-                            ,)*
-                            _ => panic!()
+                    ([$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
+                        match output.data_type().identifier() {
+                            $(<$dt_out>::IDENTIFIER => {
+                                apply_input!($type_out, [
+                                    (data_type::BoolDataType, u8, downsample),
+                                    (data_type::Int8DataType, i8, downsample),
+                                    (data_type::Int16DataType, i16, downsample),
+                                    (data_type::Int32DataType, i32, downsample),
+                                    (data_type::Int64DataType, i64, downsample),
+                                    (data_type::UInt8DataType, u8, downsample),
+                                    (data_type::UInt16DataType, u16, downsample),
+                                    (data_type::UInt32DataType, u32, downsample),
+                                    (data_type::UInt64DataType, u64, downsample),
+                                    (data_type::BFloat16DataType, half::bf16, downsample_continuous_only),
+                                    (data_type::Float16DataType, half::f16, downsample_continuous_only),
+                                    (data_type::Float32DataType, f32, downsample_continuous_only),
+                                    (data_type::Float64DataType, f64, downsample_continuous_only)
+                                ])
+                            },)*
+                            id => panic!("Unsupported output data type: {}", id)
                         }
                     };
                 }
                 apply_output!([
-                    (Bool, u8),
-                    (Int8, i8),
-                    (Int16, i16),
-                    (Int32, i32),
-                    (Int64, i64),
-                    (UInt8, u8),
-                    (UInt16, u16),
-                    (UInt32, u32),
-                    (UInt64, u64),
-                    (BFloat16, half::bf16),
-                    (Float16, half::f16),
-                    (Float32, f32),
-                    (Float64, f64)
+                    (data_type::BoolDataType, u8),
+                    (data_type::Int8DataType, i8),
+                    (data_type::Int16DataType, i16),
+                    (data_type::Int32DataType, i32),
+                    (data_type::Int64DataType, i64),
+                    (data_type::UInt8DataType, u8),
+                    (data_type::UInt16DataType, u16),
+                    (data_type::UInt32DataType, u32),
+                    (data_type::UInt64DataType, u64),
+                    (data_type::BFloat16DataType, half::bf16),
+                    (data_type::Float16DataType, half::f16),
+                    (data_type::Float32DataType, f32),
+                    (data_type::Float64DataType, f64)
                 ]);
 
                 progress.next();
