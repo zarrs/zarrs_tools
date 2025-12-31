@@ -30,8 +30,6 @@ struct Args {
     concurrent_chunks: Option<usize>,
 
     /// Read the entire array in one operation.
-    ///
-    /// If set, `concurrent_chunks` is ignored.
     #[arg(long, default_value_t = false)]
     read_all: bool,
 
@@ -98,6 +96,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = SystemTime::now();
     let bytes_decoded = Mutex::new(0);
     if args.read_all {
+        if let Some(concurrent_chunks) = args.concurrent_chunks {
+            zarrs::config::global_config_mut().set_chunk_concurrent_minimum(concurrent_chunks);
+        }
         *bytes_decoded.lock().unwrap() += array
             .retrieve_array_subset::<ArrayBytes>(&array.subset_all())?
             .size();

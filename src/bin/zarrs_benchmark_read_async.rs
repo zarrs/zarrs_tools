@@ -27,8 +27,6 @@ struct Args {
     concurrent_chunks: Option<usize>,
 
     /// Read the entire array in one operation.
-    ///
-    /// If set, `concurrent_chunks` is ignored.
     #[arg(long, default_value_t = false)]
     read_all: bool,
 
@@ -82,6 +80,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = SystemTime::now();
     let mut bytes_decoded = 0;
     if args.read_all {
+        if let Some(concurrent_chunks) = args.concurrent_chunks {
+            zarrs::config::global_config_mut().set_chunk_concurrent_minimum(concurrent_chunks);
+        }
         let array_data: ArrayBytes = array
             .async_retrieve_array_subset(&array.subset_all())
             .await?;
