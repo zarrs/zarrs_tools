@@ -2564,9 +2564,9 @@ dependencies = [
 
 [[package]]
 name = "zarrs"
-version = "0.23.0-beta.2"
+version = "0.23.0-beta.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3cb0877ccda4c3840dedd8228cf6c55f872c6da48bc1c12d01994856500eda16"
+checksum = "28ac7da09e4f6de9fdd5e88f5b62dccbc5f492a10298261a2f9ea140ab0de1d7"
 dependencies = [
  "async-generic",
  "async-lock",
@@ -2629,9 +2629,9 @@ dependencies = [
 
 [[package]]
 name = "zarrs_data_type"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dac7988251df2c4dbe65e4fbfd54ddddab9c43127ec21a55ef9edd8bcc168933"
+checksum = "9435d445b0272ff69676d58e77c0b212e9a3a0e34201ea345470bbea14257447"
 dependencies = [
  "derive_more",
  "half",
@@ -2835,9 +2835,9 @@ dependencies = [
 
 [[package]]
 name = "zmij"
-version = "1.0.4"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77cc0158b0d3103d58e9e82bdbe9cf9289d80dbcf4e686ff16730eb9e5814d1a"
+checksum = "e3280a1b827474fcd5dbef4b35a674deb52ba5c312363aef9135317df179d81b"
 
 [[package]]
 name = "zstd"
