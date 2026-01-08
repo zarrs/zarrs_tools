@@ -36,17 +36,6 @@ pub use path_or_temp_path::PathOrTempPath;
 // pub use chunk_cache::{ChunkCache, retrieve_array_subset_ndarray_cached};
 
 use sysinfo::{MemoryRefreshKind, RefreshKind, System};
-use thiserror::Error;
-
-#[derive(Error, Debug)]
-#[error("Data type {_0} is unsupported")]
-pub struct UnsupportedDataTypeError(String);
-
-impl From<String> for UnsupportedDataTypeError {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
 
 /// Calculates the chunk limit based on the amount of available memory.
 pub fn calculate_chunk_limit(memory_per_chunk: usize) -> Result<usize, FilterError> {

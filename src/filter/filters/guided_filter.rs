@@ -1,28 +1,26 @@
 use clap::Parser;
-use num_traits::AsPrimitive;
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt, Element, ElementOwned},
+    array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
     plugin::ExtensionIdentifier,
 };
 
-use crate::filter::{
-    filters::summed_area_table::{summed_area_table, summed_area_table_mean},
-    UnsupportedDataTypeError,
-};
 use crate::{
     filter::{
         calculate_chunk_limit,
         filter_error::FilterError,
         filter_traits::{ChunkInfo, FilterTraits},
+        filters::summed_area_table::{summed_area_table, summed_area_table_mean},
         ArraySubsetOverlap, FilterArguments, FilterCommonArguments,
     },
     progress::{Progress, ProgressCallback},
+    type_dispatch::{retrieve_ndarray_as, store_ndarray_from},
+    UnsupportedDataTypeError,
 };
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
@@ -75,18 +73,13 @@ impl GuidedFilter {
         self.radius
     }
 
-    pub fn apply_chunk<TIn, TOut>(
+    pub fn apply_chunk(
         &self,
         input: &Array<FilesystemStore>,
         output: &Array<FilesystemStore>,
         chunk_indices: &[u64],
         progress: &Progress,
-    ) -> Result<(), FilterError>
-    where
-        TIn: ElementOwned + Send + Sync + AsPrimitive<f32>,
-        TOut: Element + Send + Sync + Copy + 'static,
-        f32: AsPrimitive<TOut>,
-    {
+    ) -> Result<(), FilterError> {
         let subset_output = output.chunk_subset_bounded(chunk_indices).unwrap();
         let subset_overlap = ArraySubsetOverlap::new(
             input.shape(),
@@ -95,28 +88,25 @@ impl GuidedFilter {
             &vec![(self.radius * 2) as u64; input.dimensionality()],
         );
 
-        let input_array: ndarray::ArrayD<TIn> =
-            progress.read(|| input.retrieve_array_subset(subset_overlap.subset_input()))?;
+        // Read input and convert to f32
+        let (input_array, retrieve_timing) =
+            retrieve_ndarray_as::<f32, _>(input, subset_overlap.subset_input())?;
+        progress.add_retrieve_timing(retrieve_timing);
 
+        // Process in f32
         let output_array = progress.process(|| {
-            let input_array = input_array.mapv(|x| x.as_()); // par?
-            let output_array = self.apply_ndarray(input_array);
-            let output_array = subset_overlap.extract_subset(&output_array);
-            Ok::<_, FilterError>(output_array.mapv(|x| x.as_())) // par?
-        })?;
-        drop(input_array);
-
-        progress.write(|| {
-            output
-                .store_array_subset(&subset_output, output_array)
-                .unwrap()
+            let processed = self.apply_ndarray(input_array);
+            subset_overlap.extract_subset(&processed)
         });
+
+        // Convert from f32 and store
+        let store_timing = store_ndarray_from::<f32, _>(output, &subset_output, output_array)?;
+        progress.add_store_timing(store_timing);
 
         progress.next();
         Ok(())
     }
 
-    // FIXME: Generic
     pub fn apply_ndarray(&self, v_i: ndarray::ArrayD<f32>) -> ndarray::ArrayD<f32> {
         let subset = zarrs::array_subset::ArraySubset::new_with_shape(
             v_i.shape().iter().map(|i| *i as u64).collect(),
@@ -269,55 +259,7 @@ impl FilterTraits for GuidedFilter {
             indices,
             try_for_each,
             |chunk_indices: ArrayIndicesTinyVec| {
-                macro_rules! apply_output {
-                    ( $type_in:ty, [$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
-                        match output.data_type().identifier() {
-                            $(<$dt_out>::IDENTIFIER => {
-                                self.apply_chunk::<$type_in, $type_out>(&input, &output, &chunk_indices, &progress)
-                            },)*
-                            id => panic!("Unsupported output data type: {}", id)
-                        }
-                    };
-                }
-                macro_rules! apply_input {
-                    ([$( ( $dt_in:ty, $type_in:ty ) ),* ]) => {
-                        match input.data_type().identifier() {
-                            $(<$dt_in>::IDENTIFIER => {
-                                apply_output!($type_in, [
-                                    (data_type::BoolDataType, u8),
-                                    (data_type::Int8DataType, i8),
-                                    (data_type::Int16DataType, i16),
-                                    (data_type::Int32DataType, i32),
-                                    (data_type::Int64DataType, i64),
-                                    (data_type::UInt8DataType, u8),
-                                    (data_type::UInt16DataType, u16),
-                                    (data_type::UInt32DataType, u32),
-                                    (data_type::UInt64DataType, u64),
-                                    (data_type::BFloat16DataType, half::bf16),
-                                    (data_type::Float16DataType, half::f16),
-                                    (data_type::Float32DataType, f32),
-                                    (data_type::Float64DataType, f64)
-                                ])
-                            },)*
-                            id => panic!("Unsupported input data type: {}", id)
-                        }
-                    };
-                }
-                apply_input!([
-                    (data_type::BoolDataType, u8),
-                    (data_type::Int8DataType, i8),
-                    (data_type::Int16DataType, i16),
-                    (data_type::Int32DataType, i32),
-                    (data_type::Int64DataType, i64),
-                    (data_type::UInt8DataType, u8),
-                    (data_type::UInt16DataType, u16),
-                    (data_type::UInt32DataType, u32),
-                    (data_type::UInt64DataType, u64),
-                    (data_type::BFloat16DataType, half::bf16),
-                    (data_type::Float16DataType, half::f16),
-                    (data_type::Float32DataType, f32),
-                    (data_type::Float64DataType, f64)
-                ])
+                self.apply_chunk(input, output, &chunk_indices, &progress)
             }
         )?;
 

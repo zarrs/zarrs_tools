@@ -3,6 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::type_dispatch::{ConversionTiming, RetrieveTiming, StoreTiming};
+
 pub struct ProgressStats {
     pub step: usize,
     pub num_steps: usize,
@@ -75,6 +77,40 @@ impl<'a> Progress<'a> {
         let elapsed = start.elapsed();
         *self.duration_write.lock().unwrap() += elapsed;
         result
+    }
+
+    /// Add a read duration.
+    pub fn add_read_duration(&self, duration: Duration) {
+        *self.duration_read.lock().unwrap() += duration;
+    }
+
+    /// Add a process duration.
+    pub fn add_process_duration(&self, duration: Duration) {
+        *self.duration_process.lock().unwrap() += duration;
+    }
+
+    /// Add a write duration.
+    pub fn add_write_duration(&self, duration: Duration) {
+        *self.duration_write.lock().unwrap() += duration;
+    }
+
+    /// Add timing from a retrieve operation (read + convert as process).
+    pub fn add_retrieve_timing(&self, timing: RetrieveTiming) {
+        self.add_read_duration(timing.read);
+        self.add_process_duration(timing.convert);
+    }
+
+    /// Add timing from a store operation (convert as process + write).
+    pub fn add_store_timing(&self, timing: StoreTiming) {
+        self.add_process_duration(timing.convert);
+        self.add_write_duration(timing.write);
+    }
+
+    /// Add timing from a conversion operation (read + process + write).
+    pub fn add_conversion_timing(&self, timing: ConversionTiming) {
+        self.add_read_duration(timing.read);
+        self.add_process_duration(timing.process);
+        self.add_write_duration(timing.write);
     }
 
     pub fn stats(&self) -> ProgressStats {

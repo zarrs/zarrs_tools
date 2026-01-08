@@ -13,7 +13,6 @@ use std::{
 };
 
 use clap::Parser;
-use num_traits::AsPrimitive;
 use progress::{Progress, ProgressCallback};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon_iter_concurrent_limit::iter_concurrent_limit;
@@ -28,15 +27,11 @@ use zarrs::{
             NamedArrayToBytesCodec, NamedBytesToBytesCodec, ShardingCodec,
         },
         concurrency::RecommendedConcurrency,
-        data_type::{
-            BFloat16DataType, BoolDataType, Float16DataType, Float32DataType, Float64DataType,
-            Int16DataType, Int32DataType, Int64DataType, Int8DataType, UInt16DataType,
-            UInt32DataType, UInt64DataType, UInt8DataType,
-        },
-        Array, ArrayBuilder, ArrayError, ArrayIndicesTinyVec, ArrayShardedExt, ChunkCache,
-        ChunkCacheDecodedLruChunkLimit, ChunkCacheDecodedLruChunkLimitThreadLocal,
+        data_type, Array, ArrayBuilder, ArrayError, ArrayIndicesTinyVec, ArrayShardedExt,
+        ChunkCache, ChunkCacheDecodedLruChunkLimit, ChunkCacheDecodedLruChunkLimitThreadLocal,
         ChunkCacheDecodedLruSizeLimit, ChunkCacheDecodedLruSizeLimitThreadLocal, ChunkShape,
-        CodecChain, DataType, DimensionName, FillValue, FillValueMetadataV3, NamedDataType,
+        CodecChain, DataType, DataTypeExt, DimensionName, FillValue, FillValueMetadataV3,
+        NamedDataType,
     },
     array_subset::{ArraySubset, IncompatibleDimensionalityError},
     config::global_config,
@@ -47,6 +42,7 @@ use zarrs::{
 pub mod filter;
 pub mod info;
 pub mod progress;
+pub mod type_dispatch;
 
 /// The `zarrs` tools version with the `zarrs` version.
 ///
@@ -57,6 +53,16 @@ pub const ZARRS_TOOLS_VERSION_WITH_ZARRS: &str = const_format::formatcp!(
     env!("CARGO_PKG_VERSION"),
     zarrs::version::version_str(),
 );
+
+#[derive(thiserror::Error, Debug)]
+#[error("Data type {_0} is unsupported")]
+pub struct UnsupportedDataTypeError(String);
+
+impl From<String> for UnsupportedDataTypeError {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
 
 #[derive(Parser)]
 #[allow(rustdoc::bare_urls)]
@@ -670,74 +676,13 @@ fn convert_and_store_subset(
     progress: &Progress,
     bytes_decoded: &Mutex<usize>,
 ) -> anyhow::Result<()> {
-    macro_rules! convert_elements {
-        ( $t_in:ty, $t_out:ty ) => {{
-            let elements_in: Vec<$t_in> =
-                progress.read(|| array_in.retrieve_array_subset(subset))?;
-            let bytes_size = elements_in.len() * std::mem::size_of::<$t_in>();
-            let elements_out = progress.process(|| {
-                elements_in
-                    .into_par_iter()
-                    .map(|value| value.as_())
-                    .collect::<Vec<$t_out>>()
-            });
-            progress.write(|| array_out.store_array_subset(subset, elements_out))?;
-            *bytes_decoded.lock().unwrap() += bytes_size;
-        }};
-    }
+    let bytes_size = subset.num_elements_usize() * array_in.data_type().fixed_size().unwrap();
 
-    macro_rules! convert_from_input {
-        ( $t_out:ty, [$( ( $dt_type:ty, $t_in:ty ) ),* ]) => {
-            {
-                let dt_id = array_in.data_type().identifier();
-                $(if dt_id == <$dt_type>::IDENTIFIER { convert_elements!($t_in, $t_out) } else)*
-                { anyhow::bail!("Unsupported input data type: {}", array_in.data_type().identifier()) }
-            }
-        };
-    }
+    let timing =
+        type_dispatch::retrieve_and_store_converting(array_in.as_ref(), array_out, subset)?;
+    progress.add_conversion_timing(timing);
 
-    macro_rules! convert_to_output {
-        ([$( ( $dt_type:ty, $type_out:ty ) ),* ]) => {
-            {
-                let dt_id = array_out.data_type().identifier();
-                $(if dt_id == <$dt_type>::IDENTIFIER {
-                    convert_from_input!($type_out, [
-                        (BoolDataType, u8),
-                        (Int8DataType, i8),
-                        (Int16DataType, i16),
-                        (Int32DataType, i32),
-                        (Int64DataType, i64),
-                        (UInt8DataType, u8),
-                        (UInt16DataType, u16),
-                        (UInt32DataType, u32),
-                        (UInt64DataType, u64),
-                        (BFloat16DataType, half::bf16),
-                        (Float16DataType, half::f16),
-                        (Float32DataType, f32),
-                        (Float64DataType, f64)
-                    ])
-                } else)*
-                { anyhow::bail!("Unsupported output data type: {}", array_out.data_type().identifier()) }
-            }
-        };
-    }
-
-    convert_to_output!([
-        (BoolDataType, u8),
-        (Int8DataType, i8),
-        (Int16DataType, i16),
-        (Int32DataType, i32),
-        (Int64DataType, i64),
-        (UInt8DataType, u8),
-        (UInt16DataType, u16),
-        (UInt32DataType, u32),
-        (UInt64DataType, u64),
-        (BFloat16DataType, half::bf16),
-        (Float16DataType, half::f16),
-        (Float32DataType, f32),
-        (Float64DataType, f64)
-    ]);
-
+    *bytes_decoded.lock().unwrap() += bytes_size;
     Ok(())
 }
 
@@ -988,19 +933,19 @@ fn convert_fill_value(
                 let dt_id = data_type_in.identifier();
                 $(if dt_id == <$dt_type_in>::IDENTIFIER {
                     apply_inner!($type_in, [
-                        (BoolDataType, u8),
-                        (Int8DataType, i8),
-                        (Int16DataType, i16),
-                        (Int32DataType, i32),
-                        (Int64DataType, i64),
-                        (UInt8DataType, u8),
-                        (UInt16DataType, u16),
-                        (UInt32DataType, u32),
-                        (UInt64DataType, u64),
-                        (BFloat16DataType, half::bf16),
-                        (Float16DataType, half::f16),
-                        (Float32DataType, f32),
-                        (Float64DataType, f64)
+                        (data_type::BoolDataType, u8),
+                        (data_type::Int8DataType, i8),
+                        (data_type::Int16DataType, i16),
+                        (data_type::Int32DataType, i32),
+                        (data_type::Int64DataType, i64),
+                        (data_type::UInt8DataType, u8),
+                        (data_type::UInt16DataType, u16),
+                        (data_type::UInt32DataType, u32),
+                        (data_type::UInt64DataType, u64),
+                        (data_type::BFloat16DataType, half::bf16),
+                        (data_type::Float16DataType, half::f16),
+                        (data_type::Float32DataType, f32),
+                        (data_type::Float64DataType, f64)
                     ])
                 } else)*
                 { panic!("Unsupported input data type: {}", data_type_in.identifier()) }
@@ -1008,19 +953,19 @@ fn convert_fill_value(
         };
     }
     apply_outer!([
-        (BoolDataType, u8),
-        (Int8DataType, i8),
-        (Int16DataType, i16),
-        (Int32DataType, i32),
-        (Int64DataType, i64),
-        (UInt8DataType, u8),
-        (UInt16DataType, u16),
-        (UInt32DataType, u32),
-        (UInt64DataType, u64),
-        (BFloat16DataType, half::bf16),
-        (Float16DataType, half::f16),
-        (Float32DataType, f32),
-        (Float64DataType, f64)
+        (data_type::BoolDataType, u8),
+        (data_type::Int8DataType, i8),
+        (data_type::Int16DataType, i16),
+        (data_type::Int32DataType, i32),
+        (data_type::Int64DataType, i64),
+        (data_type::UInt8DataType, u8),
+        (data_type::UInt16DataType, u16),
+        (data_type::UInt32DataType, u32),
+        (data_type::UInt64DataType, u64),
+        (data_type::BFloat16DataType, half::bf16),
+        (data_type::Float16DataType, half::f16),
+        (data_type::Float32DataType, f32),
+        (data_type::Float64DataType, f64)
     ])
 }
 

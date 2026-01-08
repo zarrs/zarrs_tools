@@ -1,11 +1,9 @@
 use clap::Parser;
 use num_traits::AsPrimitive;
-use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{
-        data_type, Array, ArrayBytes, ArrayIndicesTinyVec, DataTypeExt, Element, ElementOwned,
-    },
+    array::{data_type, Array, ArrayBytes, ArrayIndicesTinyVec, DataTypeExt},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
     plugin::ExtensionIdentifier,
@@ -16,9 +14,11 @@ use crate::{
         calculate_chunk_limit,
         filter_error::FilterError,
         filter_traits::{ChunkInfo, FilterTraits},
-        FilterArguments, FilterCommonArguments, UnsupportedDataTypeError,
+        FilterArguments, FilterCommonArguments,
     },
     progress::{Progress, ProgressCallback},
+    type_dispatch::{retrieve_as, store_from, IntermediateType},
+    UnsupportedDataTypeError,
 };
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
@@ -80,6 +80,48 @@ impl Crop {
         (input_subset, output_subset)
     }
 
+    /// Retrieve from input subset, convert via type T, and store to output subset.
+    fn convert_via<T>(
+        input: &Array<FilesystemStore>,
+        output: &Array<FilesystemStore>,
+        input_subset: &ArraySubset,
+        output_subset: &ArraySubset,
+        progress: &Progress,
+    ) -> Result<(), FilterError>
+    where
+        T: Copy + Send + Sync + 'static,
+        u8: AsPrimitive<T>,
+        i8: AsPrimitive<T>,
+        i16: AsPrimitive<T>,
+        i32: AsPrimitive<T>,
+        i64: AsPrimitive<T>,
+        u16: AsPrimitive<T>,
+        u32: AsPrimitive<T>,
+        u64: AsPrimitive<T>,
+        half::f16: AsPrimitive<T>,
+        half::bf16: AsPrimitive<T>,
+        f32: AsPrimitive<T>,
+        f64: AsPrimitive<T>,
+        T: AsPrimitive<u8>,
+        T: AsPrimitive<i8>,
+        T: AsPrimitive<i16>,
+        T: AsPrimitive<i32>,
+        T: AsPrimitive<i64>,
+        T: AsPrimitive<u16>,
+        T: AsPrimitive<u32>,
+        T: AsPrimitive<u64>,
+        T: AsPrimitive<half::f16>,
+        T: AsPrimitive<half::bf16>,
+        T: AsPrimitive<f32>,
+        T: AsPrimitive<f64>,
+    {
+        let (elements, retrieve_timing) = retrieve_as::<T, _>(input, input_subset)?;
+        progress.add_retrieve_timing(retrieve_timing);
+        let store_timing = store_from(output, output_subset, elements)?;
+        progress.add_store_timing(store_timing);
+        Ok(())
+    }
+
     pub fn apply_chunk(
         &self,
         input: &Array<FilesystemStore>,
@@ -88,38 +130,60 @@ impl Crop {
         progress: &Progress,
     ) -> Result<(), FilterError> {
         let (input_subset, output_subset) = self.get_input_output_subset(output, chunk_indices);
-        let output_bytes: ArrayBytes =
-            progress.read(|| input.retrieve_array_subset(&input_subset))?;
-        progress.write(|| output.store_array_subset(&output_subset, output_bytes))?;
-        progress.next();
-        Ok(())
-    }
 
-    pub fn apply_chunk_convert<TIn, TOut>(
-        &self,
-        input: &Array<FilesystemStore>,
-        output: &Array<FilesystemStore>,
-        chunk_indices: &[u64],
-        progress: &Progress,
-    ) -> Result<(), FilterError>
-    where
-        TIn: ElementOwned + Send + Sync + AsPrimitive<TOut>,
-        TOut: Element + Send + Sync + Copy + 'static,
-    {
-        let (input_subset, output_subset) = self.get_input_output_subset(output, chunk_indices);
-
-        let input_elements: Vec<TIn> =
-            progress.read(|| input.retrieve_array_subset(&input_subset))?;
-
-        let output_elements = progress.process(|| {
-            input_elements
-                .par_iter()
-                .map(|input| input.as_())
-                .collect::<Vec<TOut>>()
-        });
-        drop(input_elements);
-
-        progress.write(|| output.store_array_subset(&output_subset, output_elements))?;
+        if input.data_type().identifier() == output.data_type().identifier() {
+            // No conversion needed, use raw bytes
+            let output_bytes: ArrayBytes =
+                progress.read(|| input.retrieve_array_subset(&input_subset))?;
+            progress.write(|| output.store_array_subset(&output_subset, output_bytes))?;
+        } else {
+            // Convert via intermediate type
+            // Note: We use separate subsets since crop has different input/output positions
+            match IntermediateType::for_data_type(input.data_type()) {
+                IntermediateType::F32 => Self::convert_via::<f32>(
+                    input,
+                    output,
+                    &input_subset,
+                    &output_subset,
+                    progress,
+                )?,
+                IntermediateType::F64 => Self::convert_via::<f64>(
+                    input,
+                    output,
+                    &input_subset,
+                    &output_subset,
+                    progress,
+                )?,
+                IntermediateType::I32 => Self::convert_via::<i32>(
+                    input,
+                    output,
+                    &input_subset,
+                    &output_subset,
+                    progress,
+                )?,
+                IntermediateType::I64 => Self::convert_via::<i64>(
+                    input,
+                    output,
+                    &input_subset,
+                    &output_subset,
+                    progress,
+                )?,
+                IntermediateType::U32 => Self::convert_via::<u32>(
+                    input,
+                    output,
+                    &input_subset,
+                    &output_subset,
+                    progress,
+                )?,
+                IntermediateType::U64 => Self::convert_via::<u64>(
+                    input,
+                    output,
+                    &input_subset,
+                    &output_subset,
+                    progress,
+                )?,
+            }
+        }
 
         progress.next();
         Ok(())
@@ -193,57 +257,7 @@ impl FilterTraits for Crop {
             indices,
             try_for_each,
             |chunk_indices: ArrayIndicesTinyVec| {
-                if input.data_type().identifier() == output.data_type().identifier() {
-                    self.apply_chunk(input, output, &chunk_indices, &progress)
-                } else {
-                    macro_rules! apply_output {
-                        ( $type_in:ty, [$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
-                            match output.data_type().identifier() {
-                                $(<$dt_out>::IDENTIFIER => self.apply_chunk_convert::<$type_in, $type_out>(input, output, &chunk_indices, &progress),)*
-                                id => panic!("Unsupported output data type: {}", id)
-                            }
-                        };
-                    }
-                    macro_rules! apply_input {
-                        ([$( ( $dt_in:ty, $type_in:ty ) ),* ]) => {
-                            match input.data_type().identifier() {
-                                $(<$dt_in>::IDENTIFIER => {
-                                    apply_output!($type_in, [
-                                        (data_type::BoolDataType, u8),
-                                        (data_type::Int8DataType, i8),
-                                        (data_type::Int16DataType, i16),
-                                        (data_type::Int32DataType, i32),
-                                        (data_type::Int64DataType, i64),
-                                        (data_type::UInt8DataType, u8),
-                                        (data_type::UInt16DataType, u16),
-                                        (data_type::UInt32DataType, u32),
-                                        (data_type::UInt64DataType, u64),
-                                        (data_type::BFloat16DataType, half::bf16),
-                                        (data_type::Float16DataType, half::f16),
-                                        (data_type::Float32DataType, f32),
-                                        (data_type::Float64DataType, f64)
-                                    ])
-                                },)*
-                                id => panic!("Unsupported input data type: {}", id)
-                            }
-                        };
-                    }
-                    apply_input!([
-                        (data_type::BoolDataType, u8),
-                        (data_type::Int8DataType, i8),
-                        (data_type::Int16DataType, i16),
-                        (data_type::Int32DataType, i32),
-                        (data_type::Int64DataType, i64),
-                        (data_type::UInt8DataType, u8),
-                        (data_type::UInt16DataType, u16),
-                        (data_type::UInt32DataType, u32),
-                        (data_type::UInt64DataType, u64),
-                        (data_type::BFloat16DataType, half::bf16),
-                        (data_type::Float16DataType, half::f16),
-                        (data_type::Float32DataType, f32),
-                        (data_type::Float64DataType, f64)
-                    ])
-                }
+                self.apply_chunk(input, output, &chunk_indices, &progress)
             }
         )?;
 

@@ -1,10 +1,11 @@
+use std::time::Instant;
+
 use clap::Parser;
-use num_traits::AsPrimitive;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
     array::{
-        data_type, Array, ArrayIndicesTinyVec, DataTypeExt, Element, ElementOwned, FillValue,
+        data_type, Array, ArrayIndicesTinyVec, DataTypeExt, ElementOwned, FillValue,
         FillValueMetadataV3, NamedDataType,
     },
     array_subset::ArraySubset,
@@ -13,9 +14,9 @@ use zarrs::{
 };
 
 use crate::{
-    filter::UnsupportedDataTypeError,
     parse_fill_value,
     progress::{Progress, ProgressCallback},
+    UnsupportedDataTypeError,
 };
 
 use crate::filter::{
@@ -65,21 +66,16 @@ impl Equal {
         Self { value, chunk_limit }
     }
 
-    pub fn apply_elements<TIn, TOut>(
-        &self,
-        input_elements: &[TIn],
-        equal: &TIn,
-    ) -> Result<Vec<TOut>, FilterError>
+    /// Compare input elements against a value, returning a Vec<bool>.
+    /// This is generic only over the input type, avoiding combinatorial explosion.
+    fn compare_elements<T>(input_elements: Vec<T>, equal: &T) -> Vec<bool>
     where
-        TIn: ElementOwned + Copy + Send + Sync + PartialEq,
-        TOut: Element + Send + Sync + Copy + 'static,
-        bool: AsPrimitive<TOut>,
+        T: ElementOwned + Copy + Send + Sync + PartialEq,
     {
-        let output_elements = input_elements
+        input_elements
             .into_par_iter()
-            .map(|value| (value == equal).as_())
-            .collect::<Vec<TOut>>();
-        Ok(output_elements)
+            .map(|value| value == *equal)
+            .collect()
     }
 }
 
@@ -163,59 +159,63 @@ impl FilterTraits for Equal {
             try_for_each,
             |chunk_indices: ArrayIndicesTinyVec| {
                 let input_output_subset = output.chunk_subset_bounded(&chunk_indices).unwrap();
-                macro_rules! apply_input {
-                    ( $t_out:ty, [$( ( $dt_in:ty, $t_in:ty ) ),* ]) => {
+
+                macro_rules! apply {
+                    ([$( ( $dt_in:ty, $t_in:ty ) ),* ]) => {
                         match input.data_type().identifier() {
                             $(<$dt_in>::IDENTIFIER => {
+                                let start = Instant::now();
                                 let input_elements: Vec<$t_in> =
-                                    progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
+                                    input.retrieve_array_subset(&input_output_subset)?;
+                                progress.add_read_duration(start.elapsed());
 
-                                let output_elements =
-                                    progress.process(|| {
-                                        let value = <$t_in>::from_ne_bytes(value.as_ne_bytes().try_into().unwrap());
-                                        self.apply_elements::<$t_in, $t_out>(&input_elements, &value)
-                                    })?;
-                                drop(input_elements);
-
-                                progress.write(|| {
-                                    output.store_array_subset(&input_output_subset, output_elements)
-                                })?;
-
-                                progress.next();
-                                Ok(())
+                                let start = Instant::now();
+                                let compare_value = <$t_in>::from_ne_bytes(
+                                    value.as_ne_bytes().try_into().unwrap()
+                                );
+                                let bool_result = Self::compare_elements(input_elements, &compare_value);
+                                progress.add_process_duration(start.elapsed());
+                                Ok::<_, FilterError>(bool_result)
                             },)*
-                            id => panic!("Unsupported input data type: {}", id)
+                            id => Err(UnsupportedDataTypeError::from(id.to_string()).into())
                         }
                     };
                 }
-                macro_rules! apply_output {
-                    ([$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
-                        match output.data_type().identifier() {
-                            $(<$dt_out>::IDENTIFIER => {
-                                apply_input!($type_out, [
-                                    (data_type::BoolDataType, u8),
-                                    (data_type::Int8DataType, i8),
-                                    (data_type::Int16DataType, i16),
-                                    (data_type::Int32DataType, i32),
-                                    (data_type::Int64DataType, i64),
-                                    (data_type::UInt8DataType, u8),
-                                    (data_type::UInt16DataType, u16),
-                                    (data_type::UInt32DataType, u32),
-                                    (data_type::UInt64DataType, u64),
-                                    (data_type::BFloat16DataType, half::bf16),
-                                    (data_type::Float16DataType, half::f16),
-                                    (data_type::Float32DataType, f32),
-                                    (data_type::Float64DataType, f64)
-                                ])
-                            },)*
-                            id => panic!("Unsupported output data type: {}", id)
-                        }
-                    };
+
+                let bool_result: Vec<bool> = apply!([
+                    (data_type::BoolDataType, u8),
+                    (data_type::Int8DataType, i8),
+                    (data_type::Int16DataType, i16),
+                    (data_type::Int32DataType, i32),
+                    (data_type::Int64DataType, i64),
+                    (data_type::UInt8DataType, u8),
+                    (data_type::UInt16DataType, u16),
+                    (data_type::UInt32DataType, u32),
+                    (data_type::UInt64DataType, u64),
+                    (data_type::BFloat16DataType, half::bf16),
+                    (data_type::Float16DataType, half::f16),
+                    (data_type::Float32DataType, f32),
+                    (data_type::Float64DataType, f64)
+                ])?;
+
+                // Store output based on output data type
+                let start = Instant::now();
+                match output.data_type().identifier() {
+                    data_type::BoolDataType::IDENTIFIER => {
+                        output.store_array_subset(&input_output_subset, bool_result)?;
+                    }
+                    data_type::UInt8DataType::IDENTIFIER => {
+                        let u8_result: Vec<u8> = bytemuck::cast_vec(bool_result);
+                        output.store_array_subset(&input_output_subset, u8_result)?;
+                    }
+                    id => {
+                        return Err(UnsupportedDataTypeError::from(id.to_string()).into());
+                    }
                 }
-                apply_output!([
-                    (data_type::BoolDataType, u8), // bool != bytemuck::Pod, but apply_chunk only stores 0 or 1, so can store as u8
-                    (data_type::UInt8DataType, u8)
-                ])
+                progress.add_write_duration(start.elapsed());
+
+                progress.next();
+                Ok(())
             }
         )
     }

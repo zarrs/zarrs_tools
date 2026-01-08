@@ -1,9 +1,8 @@
 use clap::Parser;
-use num_traits::AsPrimitive;
-use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt, Element, ElementOwned},
+    array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
     plugin::ExtensionIdentifier,
@@ -14,9 +13,11 @@ use crate::{
         calculate_chunk_limit,
         filter_error::FilterError,
         filter_traits::{ChunkInfo, FilterTraits},
-        FilterArguments, FilterCommonArguments, UnsupportedDataTypeError,
+        FilterArguments, FilterCommonArguments,
     },
     progress::{Progress, ProgressCallback},
+    type_dispatch::{retrieve_as, store_from, IntermediateType},
+    UnsupportedDataTypeError,
 };
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
@@ -68,58 +69,72 @@ impl Rescale {
         }
     }
 
-    pub fn apply_chunk<TIn, TOut>(
+    /// Apply the rescale operation to f32 elements.
+    fn apply_elements_f32(&self, elements: Vec<f32>) -> Vec<f32> {
+        let multiply = self.multiply as f32;
+        let add = self.add as f32;
+        if self.add_first {
+            elements
+                .into_par_iter()
+                .map(|v| (v + add) * multiply)
+                .collect()
+        } else {
+            elements
+                .into_par_iter()
+                .map(|v| v.mul_add(multiply, add))
+                .collect()
+        }
+    }
+
+    /// Apply the rescale operation to f64 elements.
+    fn apply_elements_f64(&self, elements: Vec<f64>) -> Vec<f64> {
+        if self.add_first {
+            elements
+                .into_par_iter()
+                .map(|v| (v + self.add) * self.multiply)
+                .collect()
+        } else {
+            elements
+                .into_par_iter()
+                .map(|v| v.mul_add(self.multiply, self.add))
+                .collect()
+        }
+    }
+
+    pub fn apply_chunk(
         &self,
         input: &Array<FilesystemStore>,
         output: &Array<FilesystemStore>,
         chunk_indices: &[u64],
         progress: &Progress,
-    ) -> Result<(), FilterError>
-    where
-        TIn: ElementOwned + Send + Sync + AsPrimitive<f64>,
-        TOut: Element + Send + Sync + Copy + 'static,
-        f64: AsPrimitive<TOut>,
-    {
-        // Determine the input and output subset
+    ) -> Result<(), FilterError> {
         let input_output_subset = output.chunk_subset_bounded(chunk_indices).unwrap();
 
-        let elements_in: Vec<TIn> =
-            progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
+        // Choose intermediate type based on input data type
+        // Use f64 for f64 and large integer types to preserve precision
+        let use_f64 = matches!(
+            IntermediateType::for_data_type(input.data_type()),
+            IntermediateType::F64 | IntermediateType::I64 | IntermediateType::U64
+        );
 
-        let elements_out = if self.add_first {
-            progress.process(|| {
-                elements_in
-                    .iter()
-                    .map(|value| {
-                        let value_f64: f64 = value.as_();
-                        ((value_f64 + self.add) * self.multiply).as_()
-                    })
-                    .collect::<Vec<TOut>>()
-            })
+        if use_f64 {
+            let (elements_in, retrieve_timing) =
+                retrieve_as::<f64, _>(input, &input_output_subset)?;
+            progress.add_retrieve_timing(retrieve_timing);
+            let elements_out = progress.process(|| self.apply_elements_f64(elements_in));
+            let store_timing = store_from(output, &input_output_subset, elements_out)?;
+            progress.add_store_timing(store_timing);
         } else {
-            progress.process(|| self.apply_elements(&elements_in))
-        };
-        drop(elements_in);
-
-        progress.write(|| output.store_array_subset(&input_output_subset, elements_out))?;
+            let (elements_in, retrieve_timing) =
+                retrieve_as::<f32, _>(input, &input_output_subset)?;
+            progress.add_retrieve_timing(retrieve_timing);
+            let elements_out = progress.process(|| self.apply_elements_f32(elements_in));
+            let store_timing = store_from(output, &input_output_subset, elements_out)?;
+            progress.add_store_timing(store_timing);
+        }
 
         progress.next();
         Ok(())
-    }
-
-    pub fn apply_elements<TIn, TOut>(&self, elements_in: &[TIn]) -> Vec<TOut>
-    where
-        TIn: Send + Sync + AsPrimitive<f64>,
-        TOut: Send + Sync + Copy + 'static,
-        f64: AsPrimitive<TOut>,
-    {
-        elements_in
-            .par_iter()
-            .map(|value| {
-                let value_f64: f64 = value.as_();
-                value_f64.mul_add(self.multiply, self.add).as_()
-            })
-            .collect::<Vec<TOut>>()
     }
 }
 
@@ -186,55 +201,7 @@ impl FilterTraits for Rescale {
             indices,
             try_for_each,
             |chunk_indices: ArrayIndicesTinyVec| {
-                macro_rules! apply_input {
-                    ( $t_out:ty, [$( ( $dt_in:ty, $t_in:ty ) ),* ]) => {
-                        match input.data_type().identifier() {
-                            $(<$dt_in>::IDENTIFIER => {
-                                self.apply_chunk::<$t_in, $t_out>(&input, &output, &chunk_indices, &progress)
-                            },)*
-                            id => panic!("Unsupported input data type: {}", id)
-                        }
-                    };
-                }
-                macro_rules! apply_output {
-                    ([$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
-                        match output.data_type().identifier() {
-                            $(<$dt_out>::IDENTIFIER => {
-                                apply_input!($type_out, [
-                                    (data_type::BoolDataType, u8),
-                                    (data_type::Int8DataType, i8),
-                                    (data_type::Int16DataType, i16),
-                                    (data_type::Int32DataType, i32),
-                                    (data_type::Int64DataType, i64),
-                                    (data_type::UInt8DataType, u8),
-                                    (data_type::UInt16DataType, u16),
-                                    (data_type::UInt32DataType, u32),
-                                    (data_type::UInt64DataType, u64),
-                                    (data_type::BFloat16DataType, half::bf16),
-                                    (data_type::Float16DataType, half::f16),
-                                    (data_type::Float32DataType, f32),
-                                    (data_type::Float64DataType, f64)
-                                ])
-                            },)*
-                            id => panic!("Unsupported output data type: {}", id)
-                        }
-                    };
-                }
-                apply_output!([
-                    (data_type::BoolDataType, u8),
-                    (data_type::Int8DataType, i8),
-                    (data_type::Int16DataType, i16),
-                    (data_type::Int32DataType, i32),
-                    (data_type::Int64DataType, i64),
-                    (data_type::UInt8DataType, u8),
-                    (data_type::UInt16DataType, u16),
-                    (data_type::UInt32DataType, u32),
-                    (data_type::UInt64DataType, u64),
-                    (data_type::BFloat16DataType, half::bf16),
-                    (data_type::Float16DataType, half::f16),
-                    (data_type::Float32DataType, f32),
-                    (data_type::Float64DataType, f64)
-                ])
+                self.apply_chunk(input, output, &chunk_indices, &progress)
             }
         )?;
 

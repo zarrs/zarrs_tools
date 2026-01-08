@@ -1,6 +1,6 @@
 use clap::Parser;
 use num_traits::AsPrimitive;
-use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
     array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt},
@@ -14,9 +14,11 @@ use crate::{
         calculate_chunk_limit,
         filter_error::FilterError,
         filter_traits::{ChunkInfo, FilterTraits},
-        FilterArguments, FilterCommonArguments, UnsupportedDataTypeError,
+        FilterArguments, FilterCommonArguments,
     },
     progress::{Progress, ProgressCallback},
+    type_dispatch::{retrieve_as, store_from, IntermediateType},
+    UnsupportedDataTypeError,
 };
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
@@ -59,16 +61,53 @@ impl Clamp {
         }
     }
 
-    pub fn apply_elements_inplace<T>(&self, elements: &mut [T]) -> Result<(), FilterError>
+    /// Apply the clamp operation to elements of type T.
+    fn apply_elements<T>(&self, elements: Vec<T>) -> Vec<T>
     where
-        T: bytemuck::Pod + Copy + Send + Sync + PartialOrd,
+        T: Copy + Send + Sync + PartialOrd + 'static,
         f64: AsPrimitive<T>,
     {
         let min: T = self.min.as_();
         let max: T = self.max.as_();
         elements
-            .par_iter_mut()
-            .for_each(|value| *value = num_traits::clamp(*value, min, max));
+            .into_par_iter()
+            .map(|v| num_traits::clamp(v, min, max))
+            .collect()
+    }
+
+    pub fn apply_chunk(
+        &self,
+        input: &Array<FilesystemStore>,
+        output: &Array<FilesystemStore>,
+        chunk_indices: &[u64],
+        progress: &Progress,
+    ) -> Result<(), FilterError> {
+        let input_output_subset = output.chunk_subset_bounded(chunk_indices).unwrap();
+
+        // Choose intermediate type based on input data type
+        // Use f64 for f64 and large integer types to preserve precision
+        let use_f64 = matches!(
+            IntermediateType::for_data_type(input.data_type()),
+            IntermediateType::F64 | IntermediateType::I64 | IntermediateType::U64
+        );
+
+        if use_f64 {
+            let (elements_in, retrieve_timing) =
+                retrieve_as::<f64, _>(input, &input_output_subset)?;
+            progress.add_retrieve_timing(retrieve_timing);
+            let elements_out = progress.process(|| self.apply_elements(elements_in));
+            let store_timing = store_from(output, &input_output_subset, elements_out)?;
+            progress.add_store_timing(store_timing);
+        } else {
+            let (elements_in, retrieve_timing) =
+                retrieve_as::<f32, _>(input, &input_output_subset)?;
+            progress.add_retrieve_timing(retrieve_timing);
+            let elements_out = progress.process(|| self.apply_elements(elements_in));
+            let store_timing = store_from(output, &input_output_subset, elements_out)?;
+            progress.add_store_timing(store_timing);
+        }
+
+        progress.next();
         Ok(())
     }
 }
@@ -136,67 +175,7 @@ impl FilterTraits for Clamp {
             indices,
             try_for_each,
             |chunk_indices: ArrayIndicesTinyVec| {
-                macro_rules! apply_input {
-                    ( $t_out:ty, [$( ( $dt_in:ty, $t_in:ty ) ),* ]) => {
-                        match input.data_type().identifier() {
-                            $(<$dt_in>::IDENTIFIER => {
-                                let input_output_subset = output.chunk_subset_bounded(&chunk_indices).unwrap();
-                                let mut elements_in: Vec<$t_in> =
-                                    progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
-                                progress.process(|| self.apply_elements_inplace::<$t_in>(&mut elements_in))?;
-
-                                let elements_out = elements_in.iter().map(|v| v.as_()).collect::<Vec<$t_out>>();
-                                drop(elements_in);
-                                progress.write(|| {
-                                    output.store_array_subset(&input_output_subset, elements_out)
-                                })?;
-                            },)*
-                            id => panic!("Unsupported input data type: {}", id)
-                        }
-                    };
-                }
-                macro_rules! apply_output {
-                    ([$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
-                        match output.data_type().identifier() {
-                            $(<$dt_out>::IDENTIFIER => {
-                                apply_input!($type_out, [
-                                    (data_type::BoolDataType, u8),
-                                    (data_type::Int8DataType, i8),
-                                    (data_type::Int16DataType, i16),
-                                    (data_type::Int32DataType, i32),
-                                    (data_type::Int64DataType, i64),
-                                    (data_type::UInt8DataType, u8),
-                                    (data_type::UInt16DataType, u16),
-                                    (data_type::UInt32DataType, u32),
-                                    (data_type::UInt64DataType, u64),
-                                    (data_type::BFloat16DataType, half::bf16),
-                                    (data_type::Float16DataType, half::f16),
-                                    (data_type::Float32DataType, f32),
-                                    (data_type::Float64DataType, f64)
-                                ])
-                            },)*
-                            id => panic!("Unsupported output data type: {}", id)
-                        }
-                    };
-                }
-                apply_output!([
-                    (data_type::BoolDataType, u8),
-                    (data_type::Int8DataType, i8),
-                    (data_type::Int16DataType, i16),
-                    (data_type::Int32DataType, i32),
-                    (data_type::Int64DataType, i64),
-                    (data_type::UInt8DataType, u8),
-                    (data_type::UInt16DataType, u16),
-                    (data_type::UInt32DataType, u32),
-                    (data_type::UInt64DataType, u64),
-                    (data_type::BFloat16DataType, half::bf16),
-                    (data_type::Float16DataType, half::f16),
-                    (data_type::Float32DataType, f32),
-                    (data_type::Float64DataType, f64)
-                ]);
-
-                progress.next();
-                Ok::<_, FilterError>(())
+                self.apply_chunk(input, output, &chunk_indices, &progress)
             }
         )?;
 

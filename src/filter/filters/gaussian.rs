@@ -1,11 +1,13 @@
+use std::iter::Sum;
+
 use clap::Parser;
 use itertools::Itertools;
 use ndarray::ArrayD;
-use num_traits::AsPrimitive;
+use num_traits::Float;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt, Element, ElementOwned},
+    array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
     plugin::ExtensionIdentifier,
@@ -17,9 +19,11 @@ use crate::{
         filter_error::FilterError,
         filter_traits::{ChunkInfo, FilterTraits},
         kernel::apply_1d_kernel,
-        ArraySubsetOverlap, FilterArguments, FilterCommonArguments, UnsupportedDataTypeError,
+        ArraySubsetOverlap, FilterArguments, FilterCommonArguments,
     },
     progress::{Progress, ProgressCallback},
+    type_dispatch::{retrieve_ndarray_as, store_ndarray_from, IntermediateType},
+    UnsupportedDataTypeError,
 };
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize, Default)]
@@ -50,20 +54,27 @@ impl FilterArguments for GaussianArguments {
 }
 
 pub struct Gaussian {
-    kernel: Vec<ndarray::Array1<f32>>,
+    kernel_f32: Vec<ndarray::Array1<f32>>,
+    kernel_f64: Vec<ndarray::Array1<f64>>,
     kernel_half_size: Vec<u64>,
     chunk_limit: Option<usize>,
 }
 
 impl Gaussian {
     pub fn new(sigma: Vec<f32>, kernel_half_size: Vec<u64>, chunk_limit: Option<usize>) -> Self {
-        let kernel = std::iter::zip(&sigma, &kernel_half_size)
+        let kernel_f32 = std::iter::zip(&sigma, &kernel_half_size)
             .map(|(sigma, kernel_half_size)| {
                 create_sampled_gaussian_kernel(*sigma, *kernel_half_size)
             })
             .collect_vec();
+        let kernel_f64 = std::iter::zip(&sigma, &kernel_half_size)
+            .map(|(sigma, kernel_half_size)| {
+                create_sampled_gaussian_kernel(*sigma as f64, *kernel_half_size)
+            })
+            .collect_vec();
         Self {
-            kernel,
+            kernel_f32,
+            kernel_f64,
             kernel_half_size,
             chunk_limit,
         }
@@ -73,47 +84,64 @@ impl Gaussian {
         &self.kernel_half_size
     }
 
-    pub fn apply_chunk<TIn, TOut>(
+    pub fn apply_chunk(
         &self,
         input: &Array<FilesystemStore>,
         output: &Array<FilesystemStore>,
         chunk_indices: &[u64],
         progress: &Progress,
-    ) -> Result<(), FilterError>
-    where
-        TIn: ElementOwned + Send + Sync + AsPrimitive<f32>,
-        TOut: Element + Send + Sync + Copy + 'static,
-        f32: AsPrimitive<TOut>,
-    {
+    ) -> Result<(), FilterError> {
         let subset_output = output.chunk_subset_bounded(chunk_indices).unwrap();
         let subset_overlap =
             ArraySubsetOverlap::new(input.shape(), &subset_output, &self.kernel_half_size);
 
-        let input_array: ndarray::ArrayD<TIn> =
-            progress.read(|| input.retrieve_array_subset(subset_overlap.subset_input()))?;
+        // Choose intermediate type based on input data type
+        let use_f64 = matches!(
+            IntermediateType::for_data_type(input.data_type()),
+            IntermediateType::F64 | IntermediateType::I64 | IntermediateType::U64
+        );
 
-        let output_array = progress.process(|| {
-            let input_array = input_array.mapv(|x| x.as_()); // par?
-            let output_array = self.apply_ndarray(input_array);
-            let output_array = subset_overlap.extract_subset(&output_array);
-            Ok::<_, FilterError>(output_array.mapv(|x| x.as_())) // par?
-        })?;
-        drop(input_array);
-
-        progress.write(|| {
-            output
-                .store_array_subset(&subset_output, output_array)
-                .unwrap()
-        });
+        if use_f64 {
+            let (input_array, retrieve_timing) =
+                retrieve_ndarray_as::<f64, _>(input, subset_overlap.subset_input())?;
+            progress.add_retrieve_timing(retrieve_timing);
+            let output_array = progress.process(|| {
+                let processed = Self::apply_ndarray_with_kernel(input_array, &self.kernel_f64);
+                subset_overlap.extract_subset(&processed)
+            });
+            let store_timing = store_ndarray_from::<f64, _>(output, &subset_output, output_array)?;
+            progress.add_store_timing(store_timing);
+        } else {
+            let (input_array, retrieve_timing) =
+                retrieve_ndarray_as::<f32, _>(input, subset_overlap.subset_input())?;
+            progress.add_retrieve_timing(retrieve_timing);
+            let output_array = progress.process(|| {
+                let processed = Self::apply_ndarray_with_kernel(input_array, &self.kernel_f32);
+                subset_overlap.extract_subset(&processed)
+            });
+            let store_timing = store_ndarray_from::<f32, _>(output, &subset_output, output_array)?;
+            progress.add_store_timing(store_timing);
+        }
 
         progress.next();
         Ok(())
     }
 
-    pub fn apply_ndarray(&self, mut input: ndarray::ArrayD<f32>) -> ndarray::ArrayD<f32> {
-        let mut gaussian = ArrayD::<f32>::zeros(input.shape());
-        for dim in 0..input.ndim() {
-            apply_1d_kernel(dim, &self.kernel[dim], &input, &mut gaussian);
+    /// Apply gaussian filter to an f32 ndarray
+    pub fn apply_ndarray(&self, input: ndarray::ArrayD<f32>) -> ndarray::ArrayD<f32> {
+        Self::apply_ndarray_with_kernel(input, &self.kernel_f32)
+    }
+
+    fn apply_ndarray_with_kernel<T>(
+        mut input: ndarray::ArrayD<T>,
+        kernel: &[ndarray::Array1<T>],
+    ) -> ndarray::ArrayD<T>
+    where
+        T: Float + Send + Sync + Sum + Copy,
+    {
+        let mut gaussian = ArrayD::<T>::zeros(input.shape());
+        for (dim, kernel_item) in kernel.iter().enumerate().take(input.ndim()) {
+            apply_1d_kernel(dim, kernel_item, &input, &mut gaussian);
             if dim + 1 != input.ndim() {
                 std::mem::swap(&mut input, &mut gaussian);
             }
@@ -198,55 +226,7 @@ impl FilterTraits for Gaussian {
             indices,
             try_for_each,
             |chunk_indices: ArrayIndicesTinyVec| {
-                macro_rules! apply_output {
-                    ( $type_in:ty, [$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
-                        match output.data_type().identifier() {
-                            $(<$dt_out>::IDENTIFIER => {
-                                self.apply_chunk::<$type_in, $type_out>(&input, &output, &chunk_indices, &progress)
-                            },)*
-                            id => panic!("Unsupported output data type: {}", id)
-                        }
-                    };
-                }
-                macro_rules! apply_input {
-                    ([$( ( $dt_in:ty, $type_in:ty ) ),* ]) => {
-                        match input.data_type().identifier() {
-                            $(<$dt_in>::IDENTIFIER => {
-                                apply_output!($type_in, [
-                                    (data_type::BoolDataType, u8),
-                                    (data_type::Int8DataType, i8),
-                                    (data_type::Int16DataType, i16),
-                                    (data_type::Int32DataType, i32),
-                                    (data_type::Int64DataType, i64),
-                                    (data_type::UInt8DataType, u8),
-                                    (data_type::UInt16DataType, u16),
-                                    (data_type::UInt32DataType, u32),
-                                    (data_type::UInt64DataType, u64),
-                                    (data_type::BFloat16DataType, half::bf16),
-                                    (data_type::Float16DataType, half::f16),
-                                    (data_type::Float32DataType, f32),
-                                    (data_type::Float64DataType, f64)
-                                ])
-                            },)*
-                            id => panic!("Unsupported input data type: {}", id)
-                        }
-                    };
-                }
-                apply_input!([
-                    (data_type::BoolDataType, u8),
-                    (data_type::Int8DataType, i8),
-                    (data_type::Int16DataType, i16),
-                    (data_type::Int32DataType, i32),
-                    (data_type::Int64DataType, i64),
-                    (data_type::UInt8DataType, u8),
-                    (data_type::UInt16DataType, u16),
-                    (data_type::UInt32DataType, u32),
-                    (data_type::UInt64DataType, u64),
-                    (data_type::BFloat16DataType, half::bf16),
-                    (data_type::Float16DataType, half::f16),
-                    (data_type::Float32DataType, f32),
-                    (data_type::Float64DataType, f64)
-                ])
+                self.apply_chunk(input, output, &chunk_indices, &progress)
             }
         )?;
 
@@ -254,20 +234,26 @@ impl FilterTraits for Gaussian {
     }
 }
 
-fn create_sampled_gaussian_kernel(sigma: f32, kernel_half_size: u64) -> ndarray::Array1<f32> {
-    if sigma == 0.0 {
-        ndarray::Array1::<f32>::from_vec(vec![1.0])
+fn create_sampled_gaussian_kernel<T>(sigma: T, kernel_half_size: u64) -> ndarray::Array1<T>
+where
+    T: Float,
+{
+    if sigma == T::zero() {
+        ndarray::Array1::<T>::from_vec(vec![T::one()])
     } else {
+        let two = T::from(2.0).unwrap();
         let t = sigma * sigma;
-        let scale = 1.0 / (2.0 * std::f32::consts::PI * t).sqrt();
-        let kernel_half_elements =
-            (0..=kernel_half_size).map(|n| scale * (-((n * n) as f32 / (2.0 * t))).exp());
+        let scale = T::one() / (two * T::from(std::f64::consts::PI).unwrap() * t).sqrt();
+        let kernel_half_elements = (0..=kernel_half_size).map(move |n| {
+            let n_sq = T::from(n * n).unwrap();
+            scale * (-(n_sq / (two * t))).exp()
+        });
         let kernel_elements = kernel_half_elements
             .clone()
             .rev()
             .chain(kernel_half_elements.skip(1))
             .collect::<Vec<_>>();
-        ndarray::Array1::<f32>::from_vec(kernel_elements)
+        ndarray::Array1::<T>::from_vec(kernel_elements)
     }
 }
 
