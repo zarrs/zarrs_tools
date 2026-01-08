@@ -16,9 +16,11 @@ use crate::{
         calculate_chunk_limit,
         filter_error::FilterError,
         filter_traits::{ChunkInfo, FilterTraits},
-        FilterArguments, FilterCommonArguments, UnsupportedDataTypeError,
+        FilterArguments, FilterCommonArguments,
     },
     progress::{Progress, ProgressCallback},
+    type_dispatch::{retrieve_ndarray_as, store_ndarray_from, IntermediateType},
+    UnsupportedDataTypeError,
 };
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
@@ -121,6 +123,160 @@ impl Downsample {
             })
         })
     }
+
+    /// Apply continuous downsampling using type T as intermediate.
+    fn apply_continuous<T>(
+        &self,
+        input: &Array<FilesystemStore>,
+        output: &Array<FilesystemStore>,
+        input_subset: &ArraySubset,
+        output_subset: &ArraySubset,
+        progress: &Progress,
+    ) -> Result<(), FilterError>
+    where
+        T: Copy + Send + Sync + AsPrimitive<f64> + std::iter::Sum + 'static,
+        f64: AsPrimitive<T>,
+        u8: AsPrimitive<T>,
+        i8: AsPrimitive<T>,
+        i16: AsPrimitive<T>,
+        i32: AsPrimitive<T>,
+        i64: AsPrimitive<T>,
+        u16: AsPrimitive<T>,
+        u32: AsPrimitive<T>,
+        u64: AsPrimitive<T>,
+        half::f16: AsPrimitive<T>,
+        half::bf16: AsPrimitive<T>,
+        f32: AsPrimitive<T>,
+        T: AsPrimitive<u8>,
+        T: AsPrimitive<i8>,
+        T: AsPrimitive<i16>,
+        T: AsPrimitive<i32>,
+        T: AsPrimitive<i64>,
+        T: AsPrimitive<u16>,
+        T: AsPrimitive<u32>,
+        T: AsPrimitive<u64>,
+        T: AsPrimitive<half::f16>,
+        T: AsPrimitive<half::bf16>,
+        T: AsPrimitive<f32>,
+        T: AsPrimitive<f64>,
+    {
+        let (input_array, retrieve_timing) = retrieve_ndarray_as::<T, _>(input, input_subset)?;
+        progress.add_retrieve_timing(retrieve_timing);
+        let output_array: ndarray::ArrayD<T> = self.apply_ndarray_continuous(input_array, progress);
+        let store_timing = store_ndarray_from::<T, _>(output, output_subset, output_array)?;
+        progress.add_store_timing(store_timing);
+        Ok(())
+    }
+
+    /// Apply discrete downsampling using type T as intermediate.
+    fn apply_discrete<T>(
+        &self,
+        input: &Array<FilesystemStore>,
+        output: &Array<FilesystemStore>,
+        input_subset: &ArraySubset,
+        output_subset: &ArraySubset,
+        progress: &Progress,
+    ) -> Result<(), FilterError>
+    where
+        T: Copy + Send + Sync + PartialEq + Eq + core::hash::Hash + AsPrimitive<T> + 'static,
+        u8: AsPrimitive<T>,
+        i8: AsPrimitive<T>,
+        i16: AsPrimitive<T>,
+        i32: AsPrimitive<T>,
+        i64: AsPrimitive<T>,
+        u16: AsPrimitive<T>,
+        u32: AsPrimitive<T>,
+        u64: AsPrimitive<T>,
+        half::f16: AsPrimitive<T>,
+        half::bf16: AsPrimitive<T>,
+        f32: AsPrimitive<T>,
+        f64: AsPrimitive<T>,
+        T: AsPrimitive<u8>,
+        T: AsPrimitive<i8>,
+        T: AsPrimitive<i16>,
+        T: AsPrimitive<i32>,
+        T: AsPrimitive<i64>,
+        T: AsPrimitive<u16>,
+        T: AsPrimitive<u32>,
+        T: AsPrimitive<u64>,
+        T: AsPrimitive<half::f16>,
+        T: AsPrimitive<half::bf16>,
+        T: AsPrimitive<f32>,
+        T: AsPrimitive<f64>,
+    {
+        let (input_array, retrieve_timing) = retrieve_ndarray_as::<T, _>(input, input_subset)?;
+        progress.add_retrieve_timing(retrieve_timing);
+        let output_array: ndarray::ArrayD<T> = self.apply_ndarray_discrete(input_array, progress);
+        let store_timing = store_ndarray_from::<T, _>(output, output_subset, output_array)?;
+        progress.add_store_timing(store_timing);
+        Ok(())
+    }
+
+    pub fn apply_chunk(
+        &self,
+        input: &Array<FilesystemStore>,
+        output: &Array<FilesystemStore>,
+        input_subset: &ArraySubset,
+        output_subset: &ArraySubset,
+        progress: &Progress,
+    ) -> Result<(), FilterError> {
+        if self.discrete {
+            // For discrete mode, use integer intermediates based on input type
+            match IntermediateType::for_data_type(input.data_type()) {
+                IntermediateType::I32 => {
+                    self.apply_discrete::<i32>(input, output, input_subset, output_subset, progress)
+                }
+                IntermediateType::I64 => {
+                    self.apply_discrete::<i64>(input, output, input_subset, output_subset, progress)
+                }
+                IntermediateType::U32 => {
+                    self.apply_discrete::<u32>(input, output, input_subset, output_subset, progress)
+                }
+                IntermediateType::U64 => {
+                    self.apply_discrete::<u64>(input, output, input_subset, output_subset, progress)
+                }
+                // Float types: fall back to continuous (discrete doesn't make sense for floats)
+                IntermediateType::F32 => self.apply_continuous::<f32>(
+                    input,
+                    output,
+                    input_subset,
+                    output_subset,
+                    progress,
+                ),
+                IntermediateType::F64 => self.apply_continuous::<f64>(
+                    input,
+                    output,
+                    input_subset,
+                    output_subset,
+                    progress,
+                ),
+            }
+        } else {
+            // For continuous mode, use float intermediate based on input type
+            match IntermediateType::for_data_type(input.data_type()) {
+                // Use f32 for small types where f32 precision is sufficient
+                IntermediateType::F32 => self.apply_continuous::<f32>(
+                    input,
+                    output,
+                    input_subset,
+                    output_subset,
+                    progress,
+                ),
+                // Use f64 for f64 and all other intermediate types
+                IntermediateType::F64
+                | IntermediateType::I32
+                | IntermediateType::I64
+                | IntermediateType::U32
+                | IntermediateType::U64 => self.apply_continuous::<f64>(
+                    input,
+                    output,
+                    input_subset,
+                    output_subset,
+                    progress,
+                ),
+            }
+        }
+    }
 }
 
 impl FilterTraits for Downsample {
@@ -198,81 +354,9 @@ impl FilterTraits for Downsample {
             indices,
             try_for_each,
             |chunk_indices: ArrayIndicesTinyVec| {
-                // Determine the input and output subset
                 let output_subset = output.chunk_subset_bounded(&chunk_indices).unwrap();
                 let input_subset = self.input_subset(input.shape(), &output_subset);
-
-                macro_rules! downsample {
-                    ( $t_in:ty, $t_out:ty ) => {{
-                        let input_array: ndarray::ArrayD<$t_in> =
-                            progress.read(|| input.retrieve_array_subset(&input_subset))?;
-                        let output_array: ndarray::ArrayD<$t_out> = if self.discrete {
-                            self.apply_ndarray_discrete(input_array, &progress)
-                        } else {
-                            self.apply_ndarray_continuous(input_array, &progress)
-                        };
-                        progress
-                            .write(|| output.store_array_subset(&output_subset, output_array))?;
-                    }};
-                }
-                macro_rules! downsample_continuous_only {
-                    ( $t_in:ty, $t_out:ty ) => {{
-                        let input_array: ndarray::ArrayD<$t_in> =
-                            progress.read(|| input.retrieve_array_subset(&input_subset))?;
-                        let output_array: ndarray::ArrayD<$t_out> =
-                            self.apply_ndarray_continuous(input_array, &progress);
-                        progress
-                            .write(|| output.store_array_subset(&output_subset, output_array))?;
-                    }};
-                }
-                macro_rules! apply_input {
-                    ( $type_out:ty, [$( ( $dt_in:ty, $type_in:ty, $func:ident ) ),* ]) => {
-                        match input.data_type().identifier() {
-                            $(<$dt_in>::IDENTIFIER => { $func!($type_in, $type_out) },)*
-                            id => panic!("Unsupported input data type: {}", id)
-                        }
-                    };
-                }
-                macro_rules! apply_output {
-                    ([$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
-                        match output.data_type().identifier() {
-                            $(<$dt_out>::IDENTIFIER => {
-                                apply_input!($type_out, [
-                                    (data_type::BoolDataType, u8, downsample),
-                                    (data_type::Int8DataType, i8, downsample),
-                                    (data_type::Int16DataType, i16, downsample),
-                                    (data_type::Int32DataType, i32, downsample),
-                                    (data_type::Int64DataType, i64, downsample),
-                                    (data_type::UInt8DataType, u8, downsample),
-                                    (data_type::UInt16DataType, u16, downsample),
-                                    (data_type::UInt32DataType, u32, downsample),
-                                    (data_type::UInt64DataType, u64, downsample),
-                                    (data_type::BFloat16DataType, half::bf16, downsample_continuous_only),
-                                    (data_type::Float16DataType, half::f16, downsample_continuous_only),
-                                    (data_type::Float32DataType, f32, downsample_continuous_only),
-                                    (data_type::Float64DataType, f64, downsample_continuous_only)
-                                ])
-                            },)*
-                            id => panic!("Unsupported output data type: {}", id)
-                        }
-                    };
-                }
-                apply_output!([
-                    (data_type::BoolDataType, u8),
-                    (data_type::Int8DataType, i8),
-                    (data_type::Int16DataType, i16),
-                    (data_type::Int32DataType, i32),
-                    (data_type::Int64DataType, i64),
-                    (data_type::UInt8DataType, u8),
-                    (data_type::UInt16DataType, u16),
-                    (data_type::UInt32DataType, u32),
-                    (data_type::UInt64DataType, u64),
-                    (data_type::BFloat16DataType, half::bf16),
-                    (data_type::Float16DataType, half::f16),
-                    (data_type::Float32DataType, f32),
-                    (data_type::Float64DataType, f64)
-                ]);
-
+                self.apply_chunk(input, output, &input_subset, &output_subset, &progress)?;
                 progress.next();
                 Ok::<_, FilterError>(())
             }

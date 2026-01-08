@@ -17,9 +17,11 @@ use crate::{
         calculate_chunk_limit,
         filter_error::FilterError,
         filter_traits::{ChunkInfo, FilterTraits},
-        FilterArguments, FilterCommonArguments, UnsupportedDataTypeError,
+        FilterArguments, FilterCommonArguments,
     },
     progress::{Progress, ProgressCallback},
+    type_dispatch::retrieve_ndarray_as,
+    UnsupportedDataTypeError,
 };
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
@@ -47,7 +49,10 @@ impl SummedAreaTable {
         Self { chunk_limit }
     }
 
-    pub fn apply_dim<TIn, TOut>(
+    /// Apply summed area table computation for a single dimension.
+    /// TOut must match the output array's data type exactly since intermediate
+    /// results are stored and read back from the output array.
+    pub fn apply_dim<TOut>(
         &self,
         input: &Array<FilesystemStore>,
         output: &Array<FilesystemStore>,
@@ -57,9 +62,20 @@ impl SummedAreaTable {
         progress: &Progress,
     ) -> Result<(), FilterError>
     where
-        TIn: ElementOwned + Send + Sync,
         TOut: Element + ElementOwned + Send + Sync + Zero + AddAssign + Copy + 'static,
-        TIn: AsPrimitive<TOut>,
+        // Bounds needed for retrieve_ndarray_as to convert any input type to TOut
+        u8: AsPrimitive<TOut>,
+        i8: AsPrimitive<TOut>,
+        i16: AsPrimitive<TOut>,
+        i32: AsPrimitive<TOut>,
+        i64: AsPrimitive<TOut>,
+        u16: AsPrimitive<TOut>,
+        u32: AsPrimitive<TOut>,
+        u64: AsPrimitive<TOut>,
+        half::f16: AsPrimitive<TOut>,
+        half::bf16: AsPrimitive<TOut>,
+        f32: AsPrimitive<TOut>,
+        f64: AsPrimitive<TOut>,
     {
         let dimensionality = chunk_start_dim.len();
         let chunk_shape =
@@ -76,16 +92,16 @@ impl SummedAreaTable {
                 .enumerate()
                 .map(|(dim_i, indices)| if dim_i == dim { i } else { *indices })
                 .collect::<Vec<_>>();
-            let mut chunk: ndarray::ArrayD<TOut> = progress.read(|| {
+            let mut chunk: ndarray::ArrayD<TOut> = if dim == dimensionality - 1 {
+                // First dimension: read from input and convert to TOut
                 let chunk_subset = output.chunk_subset(&chunk_indices)?;
-                if dim == dimensionality - 1 {
-                    input
-                        .retrieve_array_subset::<ndarray::ArrayD<TIn>>(&chunk_subset)
-                        .map(|array| array.map(|v| v.as_()))
-                } else {
-                    output.retrieve_chunk(&chunk_indices)
-                }
-            })?;
+                let (array, timing) = retrieve_ndarray_as::<TOut, _>(input, &chunk_subset)?;
+                progress.add_retrieve_timing(timing);
+                array
+            } else {
+                // Subsequent dimensions: read from output (already TOut)
+                progress.read(|| output.retrieve_chunk(&chunk_indices))?
+            };
 
             progress.process(|| {
                 itertools::izip!(
@@ -186,54 +202,24 @@ impl FilterTraits for SummedAreaTable {
                 indices,
                 try_for_each,
                 |chunk_start_dim: ArrayIndicesTinyVec| {
-                    macro_rules! sat {
-                        ( $t_in:ty, $t_out:ty) => {{
-                            self.apply_dim::<$t_in, $t_out>(
-                                input,
-                                output,
-                                &chunk_start_dim,
-                                &chunk_grid_shape,
-                                dim,
-                                &progress,
-                            )?;
-                        }};
-                    }
-
-                    macro_rules! apply_output {
-                        ( $type_in:ty, [$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
+                    macro_rules! apply {
+                        ([$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
                             match output.data_type().identifier() {
                                 $(<$dt_out>::IDENTIFIER => {
-                                    sat!($type_in, $type_out)
+                                    self.apply_dim::<$type_out>(
+                                        input,
+                                        output,
+                                        &chunk_start_dim,
+                                        &chunk_grid_shape,
+                                        dim,
+                                        &progress,
+                                    )?;
                                 },)*
                                 id => panic!("Unsupported output data type: {}", id)
                             }
                         };
                     }
-                    macro_rules! apply_input {
-                        ([$( ( $dt_in:ty, $type_in:ty ) ),* ]) => {
-                            match input.data_type().identifier() {
-                                $(<$dt_in>::IDENTIFIER => {
-                                    apply_output!($type_in, [
-                                        (data_type::BoolDataType, u8), // pointless
-                                        (data_type::Int8DataType, i8),
-                                        (data_type::Int16DataType, i16),
-                                        (data_type::Int32DataType, i32),
-                                        (data_type::Int64DataType, i64),
-                                        (data_type::UInt8DataType, u8),
-                                        (data_type::UInt16DataType, u16),
-                                        (data_type::UInt32DataType, u32),
-                                        (data_type::UInt64DataType, u64),
-                                        (data_type::BFloat16DataType, half::bf16),
-                                        (data_type::Float16DataType, half::f16),
-                                        (data_type::Float32DataType, f32),
-                                        (data_type::Float64DataType, f64)
-                                    ])
-                                },)*
-                                id => panic!("Unsupported input data type: {}", id)
-                            }
-                        };
-                    }
-                    apply_input!([
+                    apply!([
                         (data_type::BoolDataType, u8),
                         (data_type::Int8DataType, i8),
                         (data_type::Int16DataType, i16),

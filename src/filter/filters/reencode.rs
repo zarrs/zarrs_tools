@@ -1,11 +1,8 @@
 use clap::Parser;
-use num_traits::AsPrimitive;
-use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{
-        data_type, Array, ArrayBytes, ArrayIndicesTinyVec, DataTypeExt, Element, ElementOwned,
-    },
+    array::{data_type, Array, ArrayBytes, ArrayIndicesTinyVec, DataTypeExt},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
     plugin::ExtensionIdentifier,
@@ -16,9 +13,11 @@ use crate::{
         calculate_chunk_limit,
         filter_error::FilterError,
         filter_traits::{ChunkInfo, FilterTraits},
-        FilterArguments, FilterCommonArguments, UnsupportedDataTypeError,
+        FilterArguments, FilterCommonArguments,
     },
     progress::{Progress, ProgressCallback},
+    type_dispatch::retrieve_and_store_converting,
+    UnsupportedDataTypeError,
 };
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
@@ -54,38 +53,17 @@ impl Reencode {
         progress: &Progress,
     ) -> Result<(), FilterError> {
         let input_output_subset = output.chunk_subset_bounded(chunk_indices).unwrap();
-        let subset_bytes: ArrayBytes =
-            progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
-        progress.write(|| output.store_array_subset(&input_output_subset, subset_bytes))?;
-        progress.next();
-        Ok(())
-    }
 
-    pub fn apply_chunk_convert<TIn, TOut>(
-        &self,
-        input: &Array<FilesystemStore>,
-        output: &Array<FilesystemStore>,
-        chunk_indices: &[u64],
-        progress: &Progress,
-    ) -> Result<(), FilterError>
-    where
-        TIn: ElementOwned + Send + Sync + AsPrimitive<TOut>,
-        TOut: Element + Send + Sync + Copy + 'static,
-    {
-        let input_output_subset = output.chunk_subset_bounded(chunk_indices).unwrap();
-
-        let input_elements: Vec<TIn> =
-            progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
-
-        let output_elements = progress.process(|| {
-            input_elements
-                .par_iter()
-                .map(|input| input.as_())
-                .collect::<Vec<TOut>>()
-        });
-        drop(input_elements);
-
-        progress.write(|| output.store_array_subset(&input_output_subset, output_elements))?;
+        if input.data_type().identifier() == output.data_type().identifier() {
+            // No conversion needed, use raw bytes
+            let subset_bytes: ArrayBytes =
+                progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
+            progress.write(|| output.store_array_subset(&input_output_subset, subset_bytes))?;
+        } else {
+            // Convert via intermediate type
+            let timing = retrieve_and_store_converting(input, output, &input_output_subset)?;
+            progress.add_conversion_timing(timing);
+        }
 
         progress.next();
         Ok(())
@@ -150,73 +128,14 @@ impl FilterTraits for Reencode {
         };
 
         let indices = chunks.indices();
-        if input.data_type().identifier() == output.data_type().identifier() {
-            rayon_iter_concurrent_limit::iter_concurrent_limit!(
-                chunk_limit,
-                indices,
-                try_for_each,
-                |chunk_indices: ArrayIndicesTinyVec| {
-                    self.apply_chunk(input, output, &chunk_indices, &progress)
-                }
-            )?;
-        } else {
-            rayon_iter_concurrent_limit::iter_concurrent_limit!(
-                chunk_limit,
-                indices,
-                try_for_each,
-                |chunk_indices: ArrayIndicesTinyVec| {
-                    macro_rules! apply_output {
-                        ( $type_in:ty, [$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
-                            match output.data_type().identifier() {
-                                $(<$dt_out>::IDENTIFIER => {
-                                    self.apply_chunk_convert::<$type_in, $type_out>(input, output, &chunk_indices, &progress)
-                                },)*
-                                id => panic!("Unsupported output data type: {}", id)
-                            }
-                        };
-                    }
-                    macro_rules! apply_input {
-                        ([$( ( $dt_in:ty, $type_in:ty ) ),* ]) => {
-                            match input.data_type().identifier() {
-                                $(<$dt_in>::IDENTIFIER => {
-                                    apply_output!($type_in, [
-                                        (data_type::BoolDataType, u8),
-                                        (data_type::Int8DataType, i8),
-                                        (data_type::Int16DataType, i16),
-                                        (data_type::Int32DataType, i32),
-                                        (data_type::Int64DataType, i64),
-                                        (data_type::UInt8DataType, u8),
-                                        (data_type::UInt16DataType, u16),
-                                        (data_type::UInt32DataType, u32),
-                                        (data_type::UInt64DataType, u64),
-                                        (data_type::BFloat16DataType, half::bf16),
-                                        (data_type::Float16DataType, half::f16),
-                                        (data_type::Float32DataType, f32),
-                                        (data_type::Float64DataType, f64)
-                                    ])
-                                },)*
-                                id => panic!("Unsupported input data type: {}", id)
-                            }
-                        };
-                    }
-                    apply_input!([
-                        (data_type::BoolDataType, u8),
-                        (data_type::Int8DataType, i8),
-                        (data_type::Int16DataType, i16),
-                        (data_type::Int32DataType, i32),
-                        (data_type::Int64DataType, i64),
-                        (data_type::UInt8DataType, u8),
-                        (data_type::UInt16DataType, u16),
-                        (data_type::UInt32DataType, u32),
-                        (data_type::UInt64DataType, u64),
-                        (data_type::BFloat16DataType, half::bf16),
-                        (data_type::Float16DataType, half::f16),
-                        (data_type::Float32DataType, f32),
-                        (data_type::Float64DataType, f64)
-                    ])
-                }
-            )?;
-        }
+        rayon_iter_concurrent_limit::iter_concurrent_limit!(
+            chunk_limit,
+            indices,
+            try_for_each,
+            |chunk_indices: ArrayIndicesTinyVec| {
+                self.apply_chunk(input, output, &chunk_indices, &progress)
+            }
+        )?;
 
         Ok(())
     }

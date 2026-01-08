@@ -1,5 +1,4 @@
 use clap::Parser;
-use num_traits::AsPrimitive;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
@@ -10,9 +9,10 @@ use zarrs::{
 };
 
 use crate::{
-    filter::UnsupportedDataTypeError,
     parse_fill_value,
     progress::{Progress, ProgressCallback},
+    type_dispatch::{retrieve_as, store_from, IntermediateType},
+    UnsupportedDataTypeError,
 };
 
 use crate::filter::{
@@ -82,21 +82,123 @@ impl ReplaceValue {
         }
     }
 
-    pub fn apply_elements<TIn, TOut>(
-        &self,
-        input_elements: &[TIn],
-        value: TIn,
-        replace: TOut,
-    ) -> Result<Vec<TOut>, FilterError>
+    fn apply_elements<T>(elements: Vec<T>, value: T, replace: T) -> Vec<T>
     where
-        TIn: bytemuck::Pod + Copy + Send + Sync + PartialEq + AsPrimitive<TOut>,
-        TOut: bytemuck::Pod + Send + Sync,
+        T: PartialEq + Copy + Send + Sync,
     {
-        let output_elements = input_elements
+        elements
             .into_par_iter()
-            .map(|v_in| if v_in == &value { replace } else { v_in.as_() })
-            .collect::<Vec<TOut>>();
-        Ok(output_elements)
+            .map(|v| if v == value { replace } else { v })
+            .collect()
+    }
+
+    fn convert_to_intermediate_bytes(
+        &self,
+        input: &Array<FilesystemStore>,
+        output: &Array<FilesystemStore>,
+        intermediate_type: IntermediateType,
+    ) -> Result<(Vec<u8>, Vec<u8>), FilterError> {
+        use num_traits::AsPrimitive;
+
+        // Get original fill values
+        let value_fv = input
+            .named_data_type()
+            .fill_value_from_metadata(&self.value)
+            .expect("value not compatible with input");
+        let replace_fv = output
+            .named_data_type()
+            .fill_value_from_metadata(&self.replace)
+            .expect("replace not compatible with output");
+
+        macro_rules! type_list {
+            ($macro:ident, $intermediate:ty, $fv:expr, $array:expr) => {
+                $macro!(
+                    $intermediate,
+                    $fv,
+                    $array,
+                    [
+                        (data_type::BoolDataType, u8),
+                        (data_type::Int8DataType, i8),
+                        (data_type::Int16DataType, i16),
+                        (data_type::Int32DataType, i32),
+                        (data_type::Int64DataType, i64),
+                        (data_type::UInt8DataType, u8),
+                        (data_type::UInt16DataType, u16),
+                        (data_type::UInt32DataType, u32),
+                        (data_type::UInt64DataType, u64),
+                        (data_type::Float16DataType, half::f16),
+                        (data_type::Float32DataType, f32),
+                        (data_type::Float64DataType, f64),
+                        (data_type::BFloat16DataType, half::bf16)
+                    ]
+                )
+            };
+        }
+
+        // Convert fill value from array's data type to intermediate type
+        macro_rules! convert_fv {
+            ($intermediate:ty, $fv:expr, $array:expr, [$( ( $dt:ty, $t:ty ) ),* ]) => {
+                match $array.data_type().identifier() {
+                    $(<$dt>::IDENTIFIER => {
+                        let v = <$t>::from_ne_bytes($fv.as_ne_bytes().try_into().unwrap());
+                        let converted: $intermediate = v.as_();
+                        converted.to_ne_bytes().to_vec()
+                    },)*
+                    id => return Err(UnsupportedDataTypeError::from(id.to_string()).into()),
+                }
+            };
+        }
+
+        macro_rules! convert_both {
+            ($intermediate:ty) => {{
+                let v = type_list!(convert_fv, $intermediate, value_fv, input);
+                let r = type_list!(convert_fv, $intermediate, replace_fv, output);
+                (v, r)
+            }};
+        }
+
+        let (value_bytes, replace_bytes) = match intermediate_type {
+            IntermediateType::F32 => convert_both!(f32),
+            IntermediateType::F64 => convert_both!(f64),
+            IntermediateType::I32 => convert_both!(i32),
+            IntermediateType::I64 => convert_both!(i64),
+            IntermediateType::U32 => convert_both!(u32),
+            IntermediateType::U64 => convert_both!(u64),
+        };
+
+        Ok((value_bytes, replace_bytes))
+    }
+
+    pub fn apply_chunk(
+        &self,
+        input: &Array<FilesystemStore>,
+        output: &Array<FilesystemStore>,
+        subset: &ArraySubset,
+        value_bytes: &[u8],
+        replace_bytes: &[u8],
+        progress: &Progress,
+    ) -> Result<(), FilterError> {
+        macro_rules! apply {
+            ($t:ty) => {{
+                let value = <$t>::from_ne_bytes(value_bytes.try_into().unwrap());
+                let replace = <$t>::from_ne_bytes(replace_bytes.try_into().unwrap());
+                let (elements, retrieve_timing) = retrieve_as::<$t, _>(input, subset)?;
+                progress.add_retrieve_timing(retrieve_timing);
+                let result = progress.process(|| Self::apply_elements(elements, value, replace));
+                let store_timing = store_from(output, subset, result)?;
+                progress.add_store_timing(store_timing);
+            }};
+        }
+
+        match IntermediateType::for_data_type(input.data_type()) {
+            IntermediateType::F32 => apply!(f32),
+            IntermediateType::F64 => apply!(f64),
+            IntermediateType::I32 => apply!(i32),
+            IntermediateType::I64 => apply!(i64),
+            IntermediateType::U32 => apply!(u32),
+            IntermediateType::U64 => apply!(u64),
+        }
+        Ok(())
     }
 }
 
@@ -146,14 +248,10 @@ impl FilterTraits for ReplaceValue {
         let chunks = ArraySubset::new_with_shape(output.chunk_grid_shape().to_vec());
         let progress = Progress::new(chunks.num_elements_usize(), progress_callback);
 
-        let value = input
-            .named_data_type()
-            .fill_value_from_metadata(&self.value)
-            .expect("value not compatible with input image");
-        let replace = output
-            .named_data_type()
-            .fill_value_from_metadata(&self.replace)
-            .expect("replace not compatible with output image");
+        // Convert value and replace to intermediate type bytes
+        let intermediate_type = IntermediateType::for_data_type(input.data_type());
+        let (value_bytes, replace_bytes) =
+            self.convert_to_intermediate_bytes(input, output, intermediate_type)?;
 
         let chunk_limit = if let Some(chunk_limit) = self.chunk_limit {
             chunk_limit
@@ -172,73 +270,20 @@ impl FilterTraits for ReplaceValue {
             indices,
             try_for_each,
             |chunk_indices: ArrayIndicesTinyVec| {
-                let input_output_subset = output.chunk_subset_bounded(&chunk_indices).unwrap();
-                macro_rules! apply_input {
-                    ( $t_out:ty, [$( ( $dt_in:ty, $t_in:ty ) ),* ]) => {
-                        match input.data_type().identifier() {
-                            $(<$dt_in>::IDENTIFIER => {
-                                let input_elements: Vec<$t_in> =
-                                    progress.read(|| input.retrieve_array_subset(&input_output_subset))?;
-
-                                let output_elements =
-                                    progress.process(|| {
-                                        let value = <$t_in>::from_ne_bytes(value.as_ne_bytes().try_into().unwrap());
-                                        let replace = <$t_out>::from_ne_bytes(replace.as_ne_bytes().try_into().unwrap());
-                                        self.apply_elements::<$t_in, $t_out>(&input_elements, value, replace)
-                                    })?;
-                                drop(input_elements);
-
-                                progress.write(|| {
-                                    output.store_array_subset(&input_output_subset, output_elements)
-                                })?;
-
-                                progress.next();
-                                Ok(())
-                            },)*
-                            id => panic!("Unsupported input data type: {}", id)
-                        }
-                    };
-                }
-                macro_rules! apply_output {
-                    ([$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
-                        match output.data_type().identifier() {
-                            $(<$dt_out>::IDENTIFIER => {
-                                apply_input!($type_out, [
-                                    (data_type::BoolDataType, u8),
-                                    (data_type::Int8DataType, i8),
-                                    (data_type::Int16DataType, i16),
-                                    (data_type::Int32DataType, i32),
-                                    (data_type::Int64DataType, i64),
-                                    (data_type::UInt8DataType, u8),
-                                    (data_type::UInt16DataType, u16),
-                                    (data_type::UInt32DataType, u32),
-                                    (data_type::UInt64DataType, u64),
-                                    (data_type::BFloat16DataType, half::bf16),
-                                    (data_type::Float16DataType, half::f16),
-                                    (data_type::Float32DataType, f32),
-                                    (data_type::Float64DataType, f64)
-                                ])
-                            },)*
-                            id => panic!("Unsupported output data type: {}", id)
-                        }
-                    };
-                }
-                apply_output!([
-                    (data_type::BoolDataType, u8),
-                    (data_type::Int8DataType, i8),
-                    (data_type::Int16DataType, i16),
-                    (data_type::Int32DataType, i32),
-                    (data_type::Int64DataType, i64),
-                    (data_type::UInt8DataType, u8),
-                    (data_type::UInt16DataType, u16),
-                    (data_type::UInt32DataType, u32),
-                    (data_type::UInt64DataType, u64),
-                    (data_type::BFloat16DataType, half::bf16),
-                    (data_type::Float16DataType, half::f16),
-                    (data_type::Float32DataType, f32),
-                    (data_type::Float64DataType, f64)
-                ])
+                let subset = output.chunk_subset_bounded(&chunk_indices).unwrap();
+                self.apply_chunk(
+                    input,
+                    output,
+                    &subset,
+                    &value_bytes,
+                    &replace_bytes,
+                    &progress,
+                )?;
+                progress.next();
+                Ok::<_, FilterError>(())
             }
-        )
+        )?;
+
+        Ok(())
     }
 }

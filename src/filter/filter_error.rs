@@ -4,9 +4,6 @@ use zarrs::{
     storage::StorageError,
 };
 
-/// A data type is not supported by a filter.
-pub use super::UnsupportedDataTypeError;
-
 #[derive(Debug, Error)]
 pub enum FilterError {
     #[error(transparent)]
@@ -20,7 +17,7 @@ pub enum FilterError {
     #[error(transparent)]
     JSONError(#[from] serde_json::Error),
     #[error("Unsupported data type {_0}")]
-    UnsupportedDataType(#[from] UnsupportedDataTypeError),
+    UnsupportedDataType(#[from] crate::UnsupportedDataTypeError),
     #[error(transparent)]
     IncompatibleFillValue(#[from] DataTypeFillValueMetadataError),
     #[error(transparent)]

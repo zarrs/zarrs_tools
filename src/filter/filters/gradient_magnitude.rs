@@ -1,25 +1,28 @@
+use std::ops::AddAssign;
+
 use clap::{Parser, ValueEnum};
 use ndarray::ArrayD;
-use num_traits::AsPrimitive;
+use num_traits::Float;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt, Element, ElementOwned},
+    array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt},
     array_subset::ArraySubset,
     filesystem::FilesystemStore,
     plugin::ExtensionIdentifier,
 };
 
 use crate::{
-    filter::{calculate_chunk_limit, ArraySubsetOverlap, UnsupportedDataTypeError},
+    filter::{
+        calculate_chunk_limit,
+        filter_error::FilterError,
+        filter_traits::{ChunkInfo, FilterTraits},
+        kernel::{apply_1d_difference_operator, apply_1d_triangle_filter},
+        ArraySubsetOverlap, FilterArguments, FilterCommonArguments,
+    },
     progress::{Progress, ProgressCallback},
-};
-
-use crate::filter::{
-    filter_error::FilterError,
-    filter_traits::{ChunkInfo, FilterTraits},
-    kernel::{apply_1d_difference_operator, apply_1d_triangle_filter},
-    FilterArguments, FilterCommonArguments,
+    type_dispatch::{retrieve_ndarray_as, store_ndarray_from, IntermediateType},
+    UnsupportedDataTypeError,
 };
 
 #[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize, Default)]
@@ -66,19 +69,13 @@ impl GradientMagnitude {
         }
     }
 
-    pub fn apply_chunk<TIn, TOut>(
+    pub fn apply_chunk(
         &self,
         input: &Array<FilesystemStore>,
         output: &Array<FilesystemStore>,
         chunk_indices: &[u64],
         progress: &Progress,
-    ) -> Result<(), FilterError>
-    where
-        TIn: ElementOwned + AsPrimitive<f32>,
-        TOut: Element + Copy + 'static,
-        f32: AsPrimitive<TOut>,
-    {
-        // Determine the input and output subset
+    ) -> Result<(), FilterError> {
         let subset_output = output.chunk_subset_bounded(chunk_indices).unwrap();
         let subset_overlap = ArraySubsetOverlap::new(
             input.shape(),
@@ -86,34 +83,48 @@ impl GradientMagnitude {
             &vec![1; input.dimensionality()],
         );
 
-        let input_array: ndarray::ArrayD<TIn> =
-            progress.read(|| input.retrieve_array_subset(subset_overlap.subset_input()))?;
+        // Choose intermediate type based on input data type
+        let use_f64 = matches!(
+            IntermediateType::for_data_type(input.data_type()),
+            IntermediateType::F64 | IntermediateType::I64 | IntermediateType::U64
+        );
 
-        let gradient_magnitude = progress.process(|| {
-            let input_array_f32 = input_array.map(|x| x.as_());
-            let gradient_magnitude = self.apply_ndarray(&input_array_f32);
-            let gradient_magnitude = subset_overlap.extract_subset(&gradient_magnitude);
-            gradient_magnitude.map(|x| x.as_())
-        });
-        drop(input_array);
-
-        progress.write(|| {
-            output
-                .store_array_subset(&subset_output, gradient_magnitude)
-                .unwrap()
-        });
+        if use_f64 {
+            let (input_array, retrieve_timing) =
+                retrieve_ndarray_as::<f64, _>(input, subset_overlap.subset_input())?;
+            progress.add_retrieve_timing(retrieve_timing);
+            let output_array = progress.process(|| {
+                let processed = self.apply_ndarray(&input_array);
+                subset_overlap.extract_subset(&processed)
+            });
+            let store_timing = store_ndarray_from::<f64, _>(output, &subset_output, output_array)?;
+            progress.add_store_timing(store_timing);
+        } else {
+            let (input_array, retrieve_timing) =
+                retrieve_ndarray_as::<f32, _>(input, subset_overlap.subset_input())?;
+            progress.add_retrieve_timing(retrieve_timing);
+            let output_array = progress.process(|| {
+                let processed = self.apply_ndarray(&input_array);
+                subset_overlap.extract_subset(&processed)
+            });
+            let store_timing = store_ndarray_from::<f32, _>(output, &subset_output, output_array)?;
+            progress.add_store_timing(store_timing);
+        }
 
         progress.next();
         Ok(())
     }
 
-    pub fn apply_ndarray(&self, input: &ndarray::ArrayD<f32>) -> ndarray::ArrayD<f32> {
-        let mut staging_out = ArrayD::<f32>::zeros(input.shape());
-        let mut gradient_magnitude = ArrayD::<f32>::zeros(input.shape());
+    fn apply_ndarray<T>(&self, input: &ndarray::ArrayD<T>) -> ndarray::ArrayD<T>
+    where
+        T: Float + Send + Sync + Copy + AddAssign,
+    {
+        let mut staging_out = ArrayD::<T>::zeros(input.shape());
+        let mut gradient_magnitude = ArrayD::<T>::zeros(input.shape());
 
         match self.operator {
             GradientMagnitudeOperator::Sobel => {
-                let mut staging_in = ArrayD::<f32>::zeros(input.shape());
+                let mut staging_in = ArrayD::<T>::zeros(input.shape());
                 for axis in 0..input.ndim() {
                     staging_in.assign(input);
                     for i in 0..input.ndim() {
@@ -217,57 +228,11 @@ impl FilterTraits for GradientMagnitude {
             indices,
             try_for_each,
             |chunk_indices: ArrayIndicesTinyVec| {
-                macro_rules! apply_output {
-                    ( $type_in:ty, [$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
-                        match output.data_type().identifier() {
-                            $(<$dt_out>::IDENTIFIER => {
-                                self.apply_chunk::<$type_in, $type_out>(input, output, &chunk_indices, &progress)
-                            },)*
-                            id => panic!("Unsupported output data type: {}", id)
-                        }
-                    };
-                }
-                macro_rules! apply_input {
-                    ([$( ( $dt_in:ty, $type_in:ty ) ),* ]) => {
-                        match input.data_type().identifier() {
-                            $(<$dt_in>::IDENTIFIER => {
-                                apply_output!($type_in, [
-                                    (data_type::BoolDataType, u8),
-                                    (data_type::Int8DataType, i8),
-                                    (data_type::Int16DataType, i16),
-                                    (data_type::Int32DataType, i32),
-                                    (data_type::Int64DataType, i64),
-                                    (data_type::UInt8DataType, u8),
-                                    (data_type::UInt16DataType, u16),
-                                    (data_type::UInt32DataType, u32),
-                                    (data_type::UInt64DataType, u64),
-                                    (data_type::BFloat16DataType, half::bf16),
-                                    (data_type::Float16DataType, half::f16),
-                                    (data_type::Float32DataType, f32),
-                                    (data_type::Float64DataType, f64)
-                                ])
-                            },)*
-                            id => panic!("Unsupported input data type: {}", id)
-                        }
-                    };
-                }
-                apply_input!([
-                    (data_type::BoolDataType, u8),
-                    (data_type::Int8DataType, i8),
-                    (data_type::Int16DataType, i16),
-                    (data_type::Int32DataType, i32),
-                    (data_type::Int64DataType, i64),
-                    (data_type::UInt8DataType, u8),
-                    (data_type::UInt16DataType, u16),
-                    (data_type::UInt32DataType, u32),
-                    (data_type::UInt64DataType, u64),
-                    (data_type::BFloat16DataType, half::bf16),
-                    (data_type::Float16DataType, half::f16),
-                    (data_type::Float32DataType, f32),
-                    (data_type::Float64DataType, f64)
-                ])
+                self.apply_chunk(input, output, &chunk_indices, &progress)
             }
-        )
+        )?;
+
+        Ok(())
     }
 }
 

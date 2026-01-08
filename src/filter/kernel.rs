@@ -1,4 +1,6 @@
+use num_traits::Float;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use std::iter::Sum;
 use unsafe_cell_slice::UnsafeCellSlice;
 use zarrs::array::{ravel_indices, unravel_index};
 
@@ -14,12 +16,14 @@ pub fn get_axis_start_index(axis: usize, index: usize, shape: &[usize]) -> Optio
 }
 
 /// Apply an even 1D kernel.
-pub fn apply_1d_kernel(
+pub fn apply_1d_kernel<T>(
     dim: usize,
-    kernel: &ndarray::Array1<f32>,
-    input: &ndarray::ArrayD<f32>,
-    output: &mut ndarray::ArrayD<f32>,
-) {
+    kernel: &ndarray::Array1<T>,
+    input: &ndarray::ArrayD<T>,
+    output: &mut ndarray::ArrayD<T>,
+) where
+    T: Float + Send + Sync + Sum + Copy,
+{
     assert!(kernel.len() % 2 == 1);
     let shape = input.shape();
     let input_slice = unsafe { std::slice::from_raw_parts(input.as_ptr(), input.len()) };
@@ -40,10 +44,10 @@ pub fn apply_1d_kernel(
                     .map(|(kernel_i, i)| {
                         let element_i = axis_start_index
                             + std::cmp::min(i.saturating_sub(kernel_mid), axis_end_inc);
-                        let value = unsafe { *input_slice.get_unchecked(element_i) } * kernel_i;
+                        let value = unsafe { *input_slice.get_unchecked(element_i) } * *kernel_i;
                         value
                     })
-                    .sum::<f32>();
+                    .sum::<T>();
                 let element: usize = axis_start_index + k;
                 let output_element = unsafe { output_slice.index_mut(element) };
                 *output_element = sum;
@@ -60,10 +64,10 @@ pub fn apply_1d_kernel(
                     .map(|(kernel_i, i)| {
                         let element_i = axis_start_index
                             + std::cmp::min(i.saturating_sub(kernel_mid) * stride, axis_end_inc);
-                        let value = unsafe { *input_slice.get_unchecked(element_i) } * kernel_i;
+                        let value = unsafe { *input_slice.get_unchecked(element_i) } * *kernel_i;
                         value
                     })
-                    .sum::<f32>();
+                    .sum::<T>();
                 let element: usize = axis_start_index + k * stride;
                 let output_element = unsafe { output_slice.index_mut(element) };
                 *output_element = sum;
@@ -73,54 +77,57 @@ pub fn apply_1d_kernel(
 }
 
 // Apply triangle filter [1, 2, 1]
-pub fn apply_1d_triangle_filter(
+pub fn apply_1d_triangle_filter<T>(
     axis: usize,
-    input: &ndarray::ArrayD<f32>,
-    output: &mut ndarray::ArrayD<f32>,
-) {
+    input: &ndarray::ArrayD<T>,
+    output: &mut ndarray::ArrayD<T>,
+) where
+    T: Float + Send + Sync + Copy,
+{
     let shape = input.shape();
     let input_slice = unsafe { std::slice::from_raw_parts(input.as_ptr(), input.len()) };
     let output_slice = unsafe { std::slice::from_raw_parts_mut(output.as_mut_ptr(), output.len()) };
     let output_slice = UnsafeCellSlice::new(output_slice);
     let stride = input.strides()[axis] as usize;
     let axis_len = shape[axis];
+    let quarter: T = T::from(0.25).unwrap();
+    let half: T = T::from(0.5).unwrap();
     (0..input.len() / axis_len).into_par_iter().for_each(|j| {
         let axis_start = get_axis_start_index(axis, j, shape).expect("inbounds");
         (0..axis_len).for_each(|k| {
             let prev = axis_start + k.saturating_sub(1) * stride;
             let element = axis_start + k * stride;
             let next = axis_start + std::cmp::min(k + 1, axis_len - 1) * stride;
-            // output_slice[element] = 0.25 * (input_slice[prev]
-            //     + 2.0 * input_slice[element]
-            //     + input_slice[next]);
             *unsafe { output_slice.index_mut(element) } =
-                unsafe { input_slice.get_unchecked(prev) } * 0.25
-                    + *unsafe { input_slice.get_unchecked(element) } * 0.5
-                    + unsafe { input_slice.get_unchecked(next) } * 0.25;
+                *unsafe { input_slice.get_unchecked(prev) } * quarter
+                    + *unsafe { input_slice.get_unchecked(element) } * half
+                    + *unsafe { input_slice.get_unchecked(next) } * quarter;
         })
     });
 }
 
 // Apply difference operator [-1, 0, 1]
-pub fn apply_1d_difference_operator(
+pub fn apply_1d_difference_operator<T>(
     axis: usize,
-    input: &ndarray::ArrayD<f32>,
-    output: &mut ndarray::ArrayD<f32>,
-) {
+    input: &ndarray::ArrayD<T>,
+    output: &mut ndarray::ArrayD<T>,
+) where
+    T: Float + Send + Sync + Copy,
+{
     let shape = input.shape();
     let input_slice = unsafe { std::slice::from_raw_parts(input.as_ptr(), input.len()) };
     let output_slice = unsafe { std::slice::from_raw_parts_mut(output.as_mut_ptr(), output.len()) };
     let output_slice = UnsafeCellSlice::new(output_slice);
     let stride = input.strides()[axis] as usize;
     let axis_len = shape[axis];
+    let half: T = T::from(0.5).unwrap();
     (0..input.len() / axis_len).into_par_iter().for_each(|j| {
         let axis_start = get_axis_start_index(axis, j, shape).expect("inbounds");
         (0..axis_len).for_each(|k| {
             let prev = axis_start + k.saturating_sub(1) * stride;
             let element = axis_start + k * stride;
             let next = axis_start + std::cmp::min(k + 1, axis_len - 1) * stride;
-            // output_slice[element] = input_slice[next] - input_slice[prev];
-            let difference = 0.5
+            let difference = half
                 * (*unsafe { input_slice.get_unchecked(next) }
                     - *unsafe { input_slice.get_unchecked(prev) });
             *unsafe { output_slice.index_mut(element) } = difference;
