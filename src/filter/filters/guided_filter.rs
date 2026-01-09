@@ -4,8 +4,7 @@ use rayon::iter::{
 };
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt},
-    array_subset::ArraySubset,
+    array::{data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataTypeExt},
     filesystem::FilesystemStore,
     plugin::ExtensionIdentifier,
 };
@@ -108,9 +107,7 @@ impl GuidedFilter {
     }
 
     pub fn apply_ndarray(&self, v_i: ndarray::ArrayD<f32>) -> ndarray::ArrayD<f32> {
-        let subset = zarrs::array_subset::ArraySubset::new_with_shape(
-            v_i.shape().iter().map(|i| *i as u64).collect(),
-        );
+        let subset = ArraySubset::new_with_shape(v_i.shape().iter().map(|i| *i as u64).collect());
 
         // Alloc: f64
         let mut sat = ndarray::ArrayD::<f64>::zeros(v_i.shape());
@@ -177,9 +174,7 @@ impl GuidedFilter {
     }
 
     fn sat_to_mean(&self, sat: &ndarray::ArrayD<f64>) -> ndarray::ArrayD<f32> {
-        let subset = zarrs::array_subset::ArraySubset::new_with_shape(
-            sat.shape().iter().map(|i| *i as u64).collect(),
-        );
+        let subset = ArraySubset::new_with_shape(sat.shape().iter().map(|i| *i as u64).collect());
         let mean: Vec<f32> = subset
             .indices()
             .into_par_iter()

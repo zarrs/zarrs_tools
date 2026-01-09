@@ -18,9 +18,8 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
     array::{
         codec::array_to_bytes::sharding::ShardingCodec, codec::ArrayCodecTraits, data_type, Array,
-        ArrayIndicesTinyVec, ArrayMetadata, Element, ElementOwned,
+        ArrayIndicesTinyVec, ArrayMetadata, ArraySubset, Element, ElementOwned,
     },
-    array_subset::ArraySubset,
     filesystem::{FilesystemStore, FilesystemStoreOptions},
     group::{Group, GroupMetadata, GroupMetadataV3},
     plugin::ExtensionIdentifier,

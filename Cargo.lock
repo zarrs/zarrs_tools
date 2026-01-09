@@ -2564,9 +2564,9 @@ dependencies = [
 
 [[package]]
 name = "zarrs"
-version = "0.23.0-beta.3"
+version = "0.23.0-beta.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28ac7da09e4f6de9fdd5e88f5b62dccbc5f492a10298261a2f9ea140ab0de1d7"
+checksum = "73b13ddf3f1f58484f6cbc814f92f710365e174208240573c94103739f61a070"
 dependencies = [
  "async-generic",
  "async-lock",
@@ -2613,9 +2613,9 @@ dependencies = [
 
 [[package]]
 name = "zarrs_chunk_grid"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f916f16fdf69ebb75f6c10525402a4c2ac744effb52c6537086f13d904f38afc"
+checksum = "3bcc8bd0db802aac5367effc3b7120b240a071c6a2749dc5e1fb31f3d9dc44bf"
 dependencies = [
  "derive_more",
  "inventory",
@@ -2644,9 +2644,9 @@ dependencies = [
 
 [[package]]
 name = "zarrs_filesystem"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b56c130d3dbd382a30a2b1e374b01ba69d1444417abacee27a6ae4c9846dab74"
+checksum = "9be80fbb97337abce76aca6a96cc1aec607b6073ecb2aa395b2928385eff2c63"
 dependencies = [
  "bytes",
  "derive_more",
@@ -2703,10 +2703,11 @@ dependencies = [
 
 [[package]]
 name = "zarrs_plugin"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e32c432aef3d33089fa07e4f10de5aeb42df7b54cfd77edf5ed276ef703764fe"
+checksum = "b4dbbac77284b1ab4ef79c847b9c21db76ca841152003ba65a69efc695f79e4e"
 dependencies = [
+ "paste",
  "regex",
  "thiserror",
 ]

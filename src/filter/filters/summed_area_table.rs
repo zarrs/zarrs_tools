@@ -6,8 +6,9 @@ use num_traits::{AsPrimitive, Zero};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt, Element, ElementOwned},
-    array_subset::ArraySubset,
+    array::{
+        data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataTypeExt, Element, ElementOwned,
+    },
     filesystem::FilesystemStore,
     plugin::ExtensionIdentifier,
 };

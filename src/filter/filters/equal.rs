@@ -5,10 +5,9 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
     array::{
-        data_type, Array, ArrayIndicesTinyVec, DataTypeExt, ElementOwned, FillValue,
+        data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataTypeExt, ElementOwned, FillValue,
         FillValueMetadataV3, NamedDataType,
     },
-    array_subset::ArraySubset,
     filesystem::FilesystemStore,
     plugin::ExtensionIdentifier,
 };

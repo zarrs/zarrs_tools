@@ -8,9 +8,8 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
     array::{
         codec::CodecOptions, ArrayBytes, ArrayIndicesTinyVec, ArrayShardedExt,
-        ArrayShardedReadableExt, ArrayShardedReadableExtCache,
+        ArrayShardedReadableExt, ArrayShardedReadableExtCache, ArraySubset,
     },
-    array_subset::ArraySubset,
     storage::{
         storage_adapter::async_to_sync::{AsyncToSyncBlockOn, AsyncToSyncStorageAdapter},
         AsyncReadableStorage, ReadableStorage,

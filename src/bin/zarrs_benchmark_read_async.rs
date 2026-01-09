@@ -7,10 +7,9 @@ use clap::Parser;
 use futures::{FutureExt, StreamExt};
 use zarrs::{
     array::{
-        codec::CodecOptions, ArrayBytes, ArrayShardedExt, AsyncArrayShardedReadableExt,
-        AsyncArrayShardedReadableExtCache,
+        codec::CodecOptions, ArrayBytes, ArrayShardedExt, ArraySubset,
+        AsyncArrayShardedReadableExt, AsyncArrayShardedReadableExtCache,
     },
-    array_subset::ArraySubset,
     storage::AsyncReadableStorage,
 };
 use zarrs_tools::calculate_chunk_and_codec_concurrency;

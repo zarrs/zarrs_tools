@@ -6,8 +6,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon_iter_concurrent_limit::iter_concurrent_limit;
 use zarrs::array::codec::CodecOptions;
-use zarrs::array::{ArrayBytes, ArrayIndicesTinyVec};
-use zarrs::array_subset::ArraySubset;
+use zarrs::array::{ArrayBytes, ArrayIndicesTinyVec, ArraySubset};
 use zarrs::filesystem::{FilesystemStore, FilesystemStoreOptions};
 use zarrs::storage::{
     storage_adapter::async_to_sync::{AsyncToSyncBlockOn, AsyncToSyncStorageAdapter},

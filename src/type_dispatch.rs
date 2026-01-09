@@ -9,8 +9,7 @@ use std::time::{Duration, Instant};
 use num_traits::AsPrimitive;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
-    array::{data_type, Array, ArrayError, DataType},
-    array_subset::ArraySubset,
+    array::{data_type, Array, ArrayError, ArraySubset, DataType},
     plugin::{ExtensionIdentifier, ZarrVersions},
     storage::{ReadableStorageTraits, ReadableWritableStorageTraits},
 };

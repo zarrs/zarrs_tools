@@ -2,8 +2,7 @@ use clap::Parser;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{data_type, Array, ArrayBytes, ArrayIndicesTinyVec, DataTypeExt},
-    array_subset::ArraySubset,
+    array::{data_type, Array, ArrayBytes, ArrayIndicesTinyVec, ArraySubset, DataTypeExt},
     filesystem::FilesystemStore,
     plugin::ExtensionIdentifier,
 };

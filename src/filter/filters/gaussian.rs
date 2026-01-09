@@ -7,8 +7,7 @@ use num_traits::Float;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{data_type, Array, ArrayIndicesTinyVec, DataTypeExt},
-    array_subset::ArraySubset,
+    array::{data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataTypeExt},
     filesystem::FilesystemStore,
     plugin::ExtensionIdentifier,
 };

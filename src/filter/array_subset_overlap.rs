@@ -1,5 +1,5 @@
 use ndarray::{ArrayD, IxDyn, SliceInfo, SliceInfoElem};
-use zarrs::array_subset::ArraySubset;
+use zarrs::array::ArraySubset;
 
 #[derive(Debug)]
 pub struct ArraySubsetOverlap {

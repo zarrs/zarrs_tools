@@ -2,8 +2,7 @@ use half::{bf16, f16};
 use num_traits::AsPrimitive;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use zarrs::{
-    array::{data_type, Array, ArrayError, ArrayIndicesTinyVec, ElementOwned},
-    array_subset::ArraySubset,
+    array::{data_type, Array, ArrayError, ArrayIndicesTinyVec, ArraySubset, ElementOwned},
     plugin::ExtensionIdentifier,
     storage::ReadableStorageTraits,
 };

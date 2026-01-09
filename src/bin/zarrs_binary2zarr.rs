@@ -9,9 +9,8 @@ use zarrs::{
     array::{
         codec::{ArrayCodecTraits, CodecOptions},
         concurrency::RecommendedConcurrency,
-        data_type, Array, DataTypeExt, Endianness, NamedDataType,
+        data_type, Array, ArraySubset, DataTypeExt, Endianness, NamedDataType,
     },
-    array_subset::ArraySubset,
     config::global_config,
     filesystem::{FilesystemStore, FilesystemStoreOptions},
     metadata::v3::MetadataV3,
