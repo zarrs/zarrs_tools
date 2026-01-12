@@ -5,11 +5,12 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
     array::{
-        data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataTypeExt, ElementOwned, FillValue,
-        FillValueMetadataV3, NamedDataType,
+        data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataType, DataTypeExt, ElementOwned,
+        FillValue,
     },
     filesystem::FilesystemStore,
-    plugin::ExtensionIdentifier,
+    metadata::FillValueMetadata,
+    plugin::ZarrVersion,
 };
 
 use crate::{
@@ -36,7 +37,7 @@ pub struct EqualArguments {
     ///   float: 0.0 "NaN" "Infinity" "-Infinity"
     ///   r*: "[0, 255]"
     #[arg(allow_hyphen_values(true), value_parser = parse_fill_value)]
-    pub value: FillValueMetadataV3,
+    pub value: FillValueMetadata,
 }
 
 impl FilterArguments for EqualArguments {
@@ -56,12 +57,12 @@ impl FilterArguments for EqualArguments {
 }
 
 pub struct Equal {
-    value: FillValueMetadataV3,
+    value: FillValueMetadata,
     chunk_limit: Option<usize>,
 }
 
 impl Equal {
-    pub fn new(value: FillValueMetadataV3, chunk_limit: Option<usize>) -> Self {
+    pub fn new(value: FillValueMetadata, chunk_limit: Option<usize>) -> Self {
         Self { value, chunk_limit }
     }
 
@@ -78,40 +79,43 @@ impl Equal {
     }
 }
 
+fn is_supported_input_type(dt: &DataType) -> bool {
+    dt.is::<data_type::BoolDataType>()
+        || dt.is::<data_type::Int8DataType>()
+        || dt.is::<data_type::Int16DataType>()
+        || dt.is::<data_type::Int32DataType>()
+        || dt.is::<data_type::Int64DataType>()
+        || dt.is::<data_type::UInt8DataType>()
+        || dt.is::<data_type::UInt16DataType>()
+        || dt.is::<data_type::UInt32DataType>()
+        || dt.is::<data_type::UInt64DataType>()
+        || dt.is::<data_type::Float16DataType>()
+        || dt.is::<data_type::Float32DataType>()
+        || dt.is::<data_type::Float64DataType>()
+        || dt.is::<data_type::BFloat16DataType>()
+}
+
+fn is_supported_output_type(dt: &DataType) -> bool {
+    dt.is::<data_type::BoolDataType>() || dt.is::<data_type::UInt8DataType>()
+}
+
 impl FilterTraits for Equal {
     fn is_compatible(
         &self,
         chunk_input: ChunkInfo,
         chunk_output: ChunkInfo,
     ) -> Result<(), FilterError> {
-        const SUPPORTED_INPUT_TYPES: &[&str] = &[
-            data_type::BoolDataType::IDENTIFIER,
-            data_type::Int8DataType::IDENTIFIER,
-            data_type::Int16DataType::IDENTIFIER,
-            data_type::Int32DataType::IDENTIFIER,
-            data_type::Int64DataType::IDENTIFIER,
-            data_type::UInt8DataType::IDENTIFIER,
-            data_type::UInt16DataType::IDENTIFIER,
-            data_type::UInt32DataType::IDENTIFIER,
-            data_type::UInt64DataType::IDENTIFIER,
-            data_type::Float16DataType::IDENTIFIER,
-            data_type::Float32DataType::IDENTIFIER,
-            data_type::Float64DataType::IDENTIFIER,
-            data_type::BFloat16DataType::IDENTIFIER,
-        ];
-        const SUPPORTED_OUTPUT_TYPES: &[&str] = &[
-            data_type::BoolDataType::IDENTIFIER,
-            data_type::UInt8DataType::IDENTIFIER,
-        ];
-        if !SUPPORTED_INPUT_TYPES.contains(&chunk_input.1.identifier()) {
-            Err(UnsupportedDataTypeError::from(
-                chunk_input.1.identifier().to_string(),
-            ))?;
+        if !is_supported_input_type(chunk_input.1) {
+            Err(UnsupportedDataTypeError::from(format!(
+                "{:?}",
+                chunk_input.1
+            )))?;
         }
-        if !SUPPORTED_OUTPUT_TYPES.contains(&chunk_output.1.identifier()) {
-            Err(UnsupportedDataTypeError::from(
-                chunk_output.1.identifier().to_string(),
-            ))?;
+        if !is_supported_output_type(chunk_output.1) {
+            Err(UnsupportedDataTypeError::from(format!(
+                "{:?}",
+                chunk_output.1
+            )))?;
         }
         Ok(())
     }
@@ -120,11 +124,8 @@ impl FilterTraits for Equal {
         chunk_input.1.fixed_size().unwrap() + chunk_output.1.fixed_size().unwrap()
     }
 
-    fn output_data_type(
-        &self,
-        _input: &Array<FilesystemStore>,
-    ) -> Option<(NamedDataType, FillValue)> {
-        Some((data_type::bool().to_named(), FillValue::from(false)))
+    fn output_data_type(&self, _input: &Array<FilesystemStore>) -> Option<(DataType, FillValue)> {
+        Some((data_type::bool(), FillValue::from(false)))
     }
 
     fn apply(
@@ -138,7 +139,10 @@ impl FilterTraits for Equal {
         let chunks = ArraySubset::new_with_shape(output.chunk_grid_shape().to_vec());
         let progress = Progress::new(chunks.num_elements_usize(), progress_callback);
 
-        let value = input.data_type().fill_value(&self.value).unwrap();
+        let value = input
+            .data_type()
+            .fill_value(&self.value, ZarrVersion::V3)
+            .unwrap();
 
         let chunk_limit = if let Some(chunk_limit) = self.chunk_limit {
             chunk_limit
@@ -161,8 +165,9 @@ impl FilterTraits for Equal {
 
                 macro_rules! apply {
                     ([$( ( $dt_in:ty, $t_in:ty ) ),* ]) => {
-                        match input.data_type().identifier() {
-                            $(<$dt_in>::IDENTIFIER => {
+                        {
+                            let dt = input.data_type();
+                            $(if dt.is::<$dt_in>() {
                                 let start = Instant::now();
                                 let input_elements: Vec<$t_in> =
                                     input.retrieve_array_subset(&input_output_subset)?;
@@ -175,8 +180,8 @@ impl FilterTraits for Equal {
                                 let bool_result = Self::compare_elements(input_elements, &compare_value);
                                 progress.add_process_duration(start.elapsed());
                                 Ok::<_, FilterError>(bool_result)
-                            },)*
-                            id => Err(UnsupportedDataTypeError::from(id.to_string()).into())
+                            } else)*
+                            { Err(UnsupportedDataTypeError::from(format!("{:?}", dt)).into()) }
                         }
                     };
                 }
@@ -199,17 +204,14 @@ impl FilterTraits for Equal {
 
                 // Store output based on output data type
                 let start = Instant::now();
-                match output.data_type().identifier() {
-                    data_type::BoolDataType::IDENTIFIER => {
-                        output.store_array_subset(&input_output_subset, bool_result)?;
-                    }
-                    data_type::UInt8DataType::IDENTIFIER => {
-                        let u8_result: Vec<u8> = bytemuck::cast_vec(bool_result);
-                        output.store_array_subset(&input_output_subset, u8_result)?;
-                    }
-                    id => {
-                        return Err(UnsupportedDataTypeError::from(id.to_string()).into());
-                    }
+                let out_dt = output.data_type();
+                if out_dt.is::<data_type::BoolDataType>() {
+                    output.store_array_subset(&input_output_subset, bool_result)?;
+                } else if out_dt.is::<data_type::UInt8DataType>() {
+                    let u8_result: Vec<u8> = bytemuck::cast_vec(bool_result);
+                    output.store_array_subset(&input_output_subset, u8_result)?;
+                } else {
+                    return Err(UnsupportedDataTypeError::from(format!("{:?}", out_dt)).into());
                 }
                 progress.add_write_duration(start.elapsed());
 

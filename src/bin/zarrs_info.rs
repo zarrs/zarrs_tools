@@ -5,11 +5,12 @@ use rayon::current_num_threads;
 use serde::Serialize;
 use serde_json::Number;
 use zarrs::{
-    array::{Array, ArrayMetadataOptions, DimensionName, FillValueMetadataV3},
+    array::{Array, ArrayMetadataOptions, DimensionName},
     filesystem::{FilesystemStore, FilesystemStoreOptions},
     group::{Group, GroupMetadataOptions},
-    metadata::v3::MetadataV3,
+    metadata::{v3::MetadataV3, FillValueMetadata},
     node::{Node, NodeMetadata},
+    plugin::{ExtensionName, ZarrVersion},
 };
 
 /// Get information about a Zarr array or group.
@@ -143,24 +144,34 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
             InfoCommand::DataType => {
                 #[derive(Serialize)]
-                struct DataType {
+                struct DataTypeOutput {
                     data_type: MetadataV3,
                 }
+                let data_type = array.data_type();
+                let name = data_type
+                    .name(ZarrVersion::V3)
+                    .expect("data type should have V3 name");
+                let configuration = data_type.configuration_v3();
+                let data_type_metadata = if configuration.is_empty() {
+                    MetadataV3::new(name.into_owned())
+                } else {
+                    MetadataV3::new_with_configuration(name.into_owned(), configuration)
+                };
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&DataType {
-                        data_type: array.named_data_type().metadata()
+                    serde_json::to_string_pretty(&DataTypeOutput {
+                        data_type: data_type_metadata
                     })?
                 );
             }
             InfoCommand::FillValue => {
                 #[derive(Serialize)]
-                struct FillValue {
-                    fill_value: FillValueMetadataV3,
+                struct FillValueOutput {
+                    fill_value: FillValueMetadata,
                 }
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&FillValue {
+                    serde_json::to_string_pretty(&FillValueOutput {
                         fill_value: array.data_type().metadata_fill_value(array.fill_value())?
                     })?
                 );

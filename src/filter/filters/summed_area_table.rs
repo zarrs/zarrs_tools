@@ -7,10 +7,10 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
     array::{
-        data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataTypeExt, Element, ElementOwned,
+        data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataType, DataTypeExt, Element,
+        ElementOwned,
     },
     filesystem::FilesystemStore,
-    plugin::ExtensionIdentifier,
 };
 
 use crate::{
@@ -126,32 +126,31 @@ impl SummedAreaTable {
     }
 }
 
+fn is_supported_type(dt: &DataType) -> bool {
+    dt.is::<data_type::BoolDataType>()
+        || dt.is::<data_type::Int8DataType>()
+        || dt.is::<data_type::Int16DataType>()
+        || dt.is::<data_type::Int32DataType>()
+        || dt.is::<data_type::Int64DataType>()
+        || dt.is::<data_type::UInt8DataType>()
+        || dt.is::<data_type::UInt16DataType>()
+        || dt.is::<data_type::UInt32DataType>()
+        || dt.is::<data_type::UInt64DataType>()
+        || dt.is::<data_type::Float16DataType>()
+        || dt.is::<data_type::Float32DataType>()
+        || dt.is::<data_type::Float64DataType>()
+        || dt.is::<data_type::BFloat16DataType>()
+}
+
 impl FilterTraits for SummedAreaTable {
     fn is_compatible(
         &self,
         chunk_input: ChunkInfo,
         chunk_output: ChunkInfo,
     ) -> Result<(), FilterError> {
-        const SUPPORTED_TYPES: &[&str] = &[
-            data_type::BoolDataType::IDENTIFIER,
-            data_type::Int8DataType::IDENTIFIER,
-            data_type::Int16DataType::IDENTIFIER,
-            data_type::Int32DataType::IDENTIFIER,
-            data_type::Int64DataType::IDENTIFIER,
-            data_type::UInt8DataType::IDENTIFIER,
-            data_type::UInt16DataType::IDENTIFIER,
-            data_type::UInt32DataType::IDENTIFIER,
-            data_type::UInt64DataType::IDENTIFIER,
-            data_type::Float16DataType::IDENTIFIER,
-            data_type::Float32DataType::IDENTIFIER,
-            data_type::Float64DataType::IDENTIFIER,
-            data_type::BFloat16DataType::IDENTIFIER,
-        ];
-        for data_type in [chunk_input.1, chunk_output.1] {
-            if !SUPPORTED_TYPES.contains(&data_type.identifier()) {
-                Err(UnsupportedDataTypeError::from(
-                    data_type.identifier().to_string(),
-                ))?;
+        for dt in [chunk_input.1, chunk_output.1] {
+            if !is_supported_type(dt) {
+                Err(UnsupportedDataTypeError::from(format!("{:?}", dt)))?;
             }
         }
         Ok(())
@@ -205,8 +204,9 @@ impl FilterTraits for SummedAreaTable {
                 |chunk_start_dim: ArrayIndicesTinyVec| {
                     macro_rules! apply {
                         ([$( ( $dt_out:ty, $type_out:ty ) ),* ]) => {
-                            match output.data_type().identifier() {
-                                $(<$dt_out>::IDENTIFIER => {
+                            {
+                                let dt = output.data_type();
+                                $(if dt.is::<$dt_out>() {
                                     self.apply_dim::<$type_out>(
                                         input,
                                         output,
@@ -215,8 +215,8 @@ impl FilterTraits for SummedAreaTable {
                                         dim,
                                         &progress,
                                     )?;
-                                },)*
-                                id => panic!("Unsupported output data type: {}", id)
+                                } else)*
+                                { panic!("Unsupported output data type: {:?}", dt) }
                             }
                         };
                     }

@@ -9,8 +9,7 @@ use std::time::{Duration, Instant};
 use num_traits::AsPrimitive;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
-    array::{data_type, Array, ArrayError, ArraySubset, DataType},
-    plugin::{ExtensionIdentifier, ZarrVersions},
+    array::{data_type, Array, ArrayError, ArraySubset, DataType, DataTypeExt},
     storage::{ReadableStorageTraits, ReadableWritableStorageTraits},
 };
 
@@ -41,10 +40,7 @@ pub struct ConversionTiming {
 }
 
 fn unsupported_data_type_error(data_type: &DataType) -> ArrayError {
-    ArrayError::Other(format!(
-        "unsupported data type {:?}",
-        data_type.default_name(ZarrVersions::V3)
-    ))
+    ArrayError::Other(format!("unsupported data type {:?}", data_type))
 }
 
 // ============================================================================
@@ -65,21 +61,30 @@ pub enum IntermediateType {
 impl IntermediateType {
     /// Select the best intermediate type for the given data type.
     pub fn for_data_type(data_type: &DataType) -> Self {
-        match data_type.identifier() {
-            data_type::Float64DataType::IDENTIFIER => IntermediateType::F64,
-            data_type::Float32DataType::IDENTIFIER
-            | data_type::Float16DataType::IDENTIFIER
-            | data_type::BFloat16DataType::IDENTIFIER => IntermediateType::F32,
-            data_type::Int64DataType::IDENTIFIER => IntermediateType::I64,
-            data_type::Int32DataType::IDENTIFIER
-            | data_type::Int16DataType::IDENTIFIER
-            | data_type::Int8DataType::IDENTIFIER => IntermediateType::I32,
-            data_type::UInt64DataType::IDENTIFIER => IntermediateType::U64,
-            data_type::UInt32DataType::IDENTIFIER
-            | data_type::UInt16DataType::IDENTIFIER
-            | data_type::UInt8DataType::IDENTIFIER
-            | data_type::BoolDataType::IDENTIFIER => IntermediateType::U32,
-            _ => IntermediateType::U32,
+        if data_type.is::<data_type::Float64DataType>() {
+            IntermediateType::F64
+        } else if data_type.is::<data_type::Float32DataType>()
+            || data_type.is::<data_type::Float16DataType>()
+            || data_type.is::<data_type::BFloat16DataType>()
+        {
+            IntermediateType::F32
+        } else if data_type.is::<data_type::Int64DataType>() {
+            IntermediateType::I64
+        } else if data_type.is::<data_type::Int32DataType>()
+            || data_type.is::<data_type::Int16DataType>()
+            || data_type.is::<data_type::Int8DataType>()
+        {
+            IntermediateType::I32
+        } else if data_type.is::<data_type::UInt64DataType>() {
+            IntermediateType::U64
+        } else if data_type.is::<data_type::UInt32DataType>()
+            || data_type.is::<data_type::UInt16DataType>()
+            || data_type.is::<data_type::UInt8DataType>()
+            || data_type.is::<data_type::BoolDataType>()
+        {
+            IntermediateType::U32
+        } else {
+            IntermediateType::U32
         }
     }
 
@@ -213,8 +218,8 @@ where
     macro_rules! retrieve_and_convert {
         ([$( ( $dt_type:ty, $rust_type:ty ) ),* ]) => {
             {
-                let dt_id = array.data_type().identifier();
-                $(if dt_id == <$dt_type>::IDENTIFIER {
+                let dt = array.data_type();
+                $(if dt.is::<$dt_type>() {
                     let start = Instant::now();
                     let elements: Vec<$rust_type> = array.retrieve_array_subset(subset)?;
                     let read = start.elapsed();
@@ -225,7 +230,7 @@ where
 
                     return Ok((converted, RetrieveTiming { read, convert }));
                 })*
-                Err(unsupported_data_type_error(array.data_type()))
+                Err(unsupported_data_type_error(dt))
             }
         };
     }
@@ -273,8 +278,8 @@ where
     macro_rules! convert_and_store {
         ([$( ( $dt_type:ty, $rust_type:ty ) ),* ]) => {
             {
-                let dt_id = array.data_type().identifier();
-                $(if dt_id == <$dt_type>::IDENTIFIER {
+                let dt = array.data_type();
+                $(if dt.is::<$dt_type>() {
                     let start = Instant::now();
                     let converted: Vec<$rust_type> = convert_vec(elements);
                     let convert = start.elapsed();
@@ -285,7 +290,7 @@ where
 
                     return Ok(StoreTiming { convert, write });
                 })*
-                Err(unsupported_data_type_error(array.data_type()))
+                Err(unsupported_data_type_error(dt))
             }
         };
     }
@@ -332,8 +337,8 @@ where
     macro_rules! retrieve_and_convert {
         ([$( ( $dt_type:ty, $rust_type:ty ) ),* ]) => {
             {
-                let dt_id = array.data_type().identifier();
-                $(if dt_id == <$dt_type>::IDENTIFIER {
+                let dt = array.data_type();
+                $(if dt.is::<$dt_type>() {
                     let start = Instant::now();
                     let elements: ndarray::ArrayD<$rust_type> = array.retrieve_array_subset(subset)?;
                     let read = start.elapsed();
@@ -344,7 +349,7 @@ where
 
                     return Ok((converted, RetrieveTiming { read, convert }));
                 })*
-                Err(unsupported_data_type_error(array.data_type()))
+                Err(unsupported_data_type_error(dt))
             }
         };
     }
@@ -392,8 +397,8 @@ where
     macro_rules! convert_and_store {
         ([$( ( $dt_type:ty, $rust_type:ty ) ),* ]) => {
             {
-                let dt_id = array.data_type().identifier();
-                $(if dt_id == <$dt_type>::IDENTIFIER {
+                let dt = array.data_type();
+                $(if dt.is::<$dt_type>() {
                     let start = Instant::now();
                     let converted: ndarray::ArrayD<$rust_type> = convert_ndarray(elements);
                     let convert = start.elapsed();
@@ -404,7 +409,7 @@ where
 
                     return Ok(StoreTiming { convert, write });
                 })*
-                Err(unsupported_data_type_error(array.data_type()))
+                Err(unsupported_data_type_error(dt))
             }
         };
     }
@@ -493,7 +498,7 @@ where
     TStorageIn: ReadableStorageTraits + ?Sized + 'static,
     TStorageOut: ReadableWritableStorageTraits + ?Sized + 'static,
 {
-    if input.data_type().identifier() == output.data_type().identifier() {
+    if input.data_type() == output.data_type() {
         // No conversion needed, use raw bytes
         let start = Instant::now();
         let bytes = input.retrieve_array_subset::<zarrs::array::ArrayBytes>(subset)?;

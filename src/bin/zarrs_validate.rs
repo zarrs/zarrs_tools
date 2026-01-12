@@ -112,11 +112,11 @@ fn try_main() -> anyhow::Result<String> {
             array1.shape(),
             array2.shape()
         );
-    } else if array1.data_type().identifier() != array2.data_type().identifier() {
+    } else if array1.data_type() != array2.data_type() {
         anyhow::bail!(
-            "Array data types do not match: {} vs {}",
-            array1.data_type().identifier(),
-            array2.data_type().identifier()
+            "Array data types do not match: {:?} vs {:?}",
+            array1.data_type(),
+            array2.data_type()
         );
     }
 

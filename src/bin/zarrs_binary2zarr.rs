@@ -9,62 +9,64 @@ use zarrs::{
     array::{
         codec::{ArrayCodecTraits, CodecOptions},
         concurrency::RecommendedConcurrency,
-        data_type, Array, ArraySubset, DataTypeExt, Endianness, NamedDataType,
+        data_type, Array, ArraySubset, DataType, DataTypeExt, Endianness,
     },
     config::global_config,
     filesystem::{FilesystemStore, FilesystemStoreOptions},
     metadata::v3::MetadataV3,
-    plugin::ExtensionIdentifier,
     storage::ListableStorageTraits,
 };
 
-use zarrs::array::DataType;
-
 fn reverse_endianness(v: &mut [u8], data_type: &DataType) -> anyhow::Result<()> {
-    match data_type.identifier() {
-        // 1-byte types: no swap needed
-        data_type::BoolDataType::IDENTIFIER
-        | data_type::Int8DataType::IDENTIFIER
-        | data_type::UInt8DataType::IDENTIFIER
-        | data_type::RawBitsDataType::IDENTIFIER => {}
-
-        // 2-byte types
-        data_type::Int16DataType::IDENTIFIER
-        | data_type::UInt16DataType::IDENTIFIER
-        | data_type::Float16DataType::IDENTIFIER
-        | data_type::BFloat16DataType::IDENTIFIER => {
-            let (chunks, _remainder) = v.as_chunks_mut::<2>();
-            for chunk in chunks {
-                let bytes = u16::from_ne_bytes(*chunk);
-                *chunk = bytes.swap_bytes().to_ne_bytes();
-            }
+    // 1-byte types: no swap needed
+    if data_type.is::<data_type::BoolDataType>()
+        || data_type.is::<data_type::Int8DataType>()
+        || data_type.is::<data_type::UInt8DataType>()
+        || data_type.is::<data_type::RawBitsDataType>()
+    {
+        // No swap needed
+    }
+    // 2-byte types
+    else if data_type.is::<data_type::Int16DataType>()
+        || data_type.is::<data_type::UInt16DataType>()
+        || data_type.is::<data_type::Float16DataType>()
+        || data_type.is::<data_type::BFloat16DataType>()
+    {
+        let (chunks, _remainder) = v.as_chunks_mut::<2>();
+        for chunk in chunks {
+            let bytes = u16::from_ne_bytes(*chunk);
+            *chunk = bytes.swap_bytes().to_ne_bytes();
         }
-
-        // 4-byte types
-        data_type::Int32DataType::IDENTIFIER
-        | data_type::UInt32DataType::IDENTIFIER
-        | data_type::Float32DataType::IDENTIFIER
-        | data_type::Complex64DataType::IDENTIFIER => {
-            let (chunks, _remainder) = v.as_chunks_mut::<4>();
-            for chunk in chunks {
-                let bytes = u32::from_ne_bytes(*chunk);
-                *chunk = bytes.swap_bytes().to_ne_bytes();
-            }
+    }
+    // 4-byte types
+    else if data_type.is::<data_type::Int32DataType>()
+        || data_type.is::<data_type::UInt32DataType>()
+        || data_type.is::<data_type::Float32DataType>()
+        || data_type.is::<data_type::Complex64DataType>()
+    {
+        let (chunks, _remainder) = v.as_chunks_mut::<4>();
+        for chunk in chunks {
+            let bytes = u32::from_ne_bytes(*chunk);
+            *chunk = bytes.swap_bytes().to_ne_bytes();
         }
-
-        // 8-byte types
-        data_type::Int64DataType::IDENTIFIER
-        | data_type::UInt64DataType::IDENTIFIER
-        | data_type::Float64DataType::IDENTIFIER
-        | data_type::Complex128DataType::IDENTIFIER => {
-            let (chunks, _remainder) = v.as_chunks_mut::<8>();
-            for chunk in chunks {
-                let bytes = u64::from_ne_bytes(*chunk);
-                *chunk = bytes.swap_bytes().to_ne_bytes();
-            }
+    }
+    // 8-byte types
+    else if data_type.is::<data_type::Int64DataType>()
+        || data_type.is::<data_type::UInt64DataType>()
+        || data_type.is::<data_type::Float64DataType>()
+        || data_type.is::<data_type::Complex128DataType>()
+    {
+        let (chunks, _remainder) = v.as_chunks_mut::<8>();
+        for chunk in chunks {
+            let bytes = u64::from_ne_bytes(*chunk);
+            *chunk = bytes.swap_bytes().to_ne_bytes();
         }
-        id => anyhow::bail!("unsupported data type {id} for reverse_endianness"),
-    };
+    } else {
+        anyhow::bail!(
+            "unsupported data type {:?} for reverse_endianness",
+            data_type
+        );
+    }
     Ok(())
 }
 
@@ -229,7 +231,7 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Get data type
-    let data_type = NamedDataType::try_from(&cli.data_type).unwrap();
+    let data_type = DataType::from_metadata(&cli.data_type).unwrap();
 
     // Create storage
     let path_out = cli.out.as_path();

@@ -17,25 +17,22 @@ use progress::{Progress, ProgressCallback};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon_iter_concurrent_limit::iter_concurrent_limit;
 use serde::{Deserialize, Serialize};
-use zarrs::plugin::ExtensionIdentifier;
 use zarrs::{
     array::{
         chunk_grid::RegularChunkGrid,
         codec::{
             array_to_bytes::sharding, ArrayCodecTraits, ArrayToBytesCodecTraits, BytesCodec, Codec,
-            CodecMetadataOptions, CodecOptions, Crc32cCodec, NamedArrayToArrayCodec,
-            NamedArrayToBytesCodec, NamedBytesToBytesCodec, ShardingCodec,
+            CodecMetadataOptions, CodecOptions, Crc32cCodec, ShardingCodec,
         },
         concurrency::RecommendedConcurrency,
         data_type, Array, ArrayBuilder, ArrayError, ArrayIndicesTinyVec, ArrayShardedExt,
         ArraySubset, ChunkCache, ChunkCacheDecodedLruChunkLimit,
         ChunkCacheDecodedLruChunkLimitThreadLocal, ChunkCacheDecodedLruSizeLimit,
         ChunkCacheDecodedLruSizeLimitThreadLocal, ChunkShape, CodecChain, DataType, DataTypeExt,
-        DimensionName, FillValue, FillValueMetadataV3, IncompatibleDimensionalityError,
-        NamedDataType,
+        DimensionName, FillValue, IncompatibleDimensionalityError,
     },
     config::global_config,
-    metadata::v3::MetadataV3,
+    metadata::{v3::MetadataV3, FillValueMetadata},
     storage::{ReadableStorageTraits, ReadableWritableListableStorageTraits},
 };
 
@@ -76,7 +73,7 @@ pub struct ZarrEncodingArgs {
     ///   float: 0.0 "NaN" "Infinity" "-Infinity"
     ///   r*: "[0, 255]"
     #[arg(short, long, verbatim_doc_comment, allow_hyphen_values(true), value_parser = parse_fill_value)]
-    pub fill_value: FillValueMetadataV3,
+    pub fill_value: FillValueMetadata,
 
     /// The chunk key encoding separator. Either . or /.
     #[arg(long, default_value_t = '/')]
@@ -144,7 +141,7 @@ fn parse_data_type(data_type: &str) -> std::io::Result<MetadataV3> {
         .map_err(|err| std::io::Error::other(err.to_string()))
 }
 
-fn parse_fill_value(fill_value: &str) -> std::io::Result<FillValueMetadataV3> {
+fn parse_fill_value(fill_value: &str) -> std::io::Result<FillValueMetadata> {
     serde_json::from_str(fill_value).map_err(|err| std::io::Error::other(err.to_string()))
 }
 
@@ -152,7 +149,7 @@ fn parse_fill_value(fill_value: &str) -> std::io::Result<FillValueMetadataV3> {
 pub fn get_array_builder(
     encoding_args: &ZarrEncodingArgs,
     array_shape: &[u64],
-    data_type: NamedDataType,
+    data_type: DataType,
     dimension_names: Option<Vec<DimensionName>>,
 ) -> zarrs::array::ArrayBuilder {
     // Set the chunk/shard shape to the array shape where it is 0, otherwise make it <= array shape
@@ -230,9 +227,7 @@ pub fn get_array_builder(
     );
 
     // Get data type / fill value
-    let fill_value = data_type
-        .fill_value_from_metadata(&encoding_args.fill_value)
-        .unwrap();
+    let fill_value = data_type.fill_value_v3(&encoding_args.fill_value).unwrap();
 
     // Create array
     let mut array_builder = ArrayBuilder::new(
@@ -313,7 +308,7 @@ pub struct ZarrReencodingArgs {
     ///   r*: "[0, 255]"
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(short, long, verbatim_doc_comment, allow_hyphen_values(true), value_parser = parse_fill_value)]
-    pub fill_value: Option<FillValueMetadataV3>,
+    pub fill_value: Option<FillValueMetadata>,
 
     /// The chunk key encoding separator. Either . or /.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -435,16 +430,19 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
 ) -> zarrs::array::ArrayBuilder {
     let codecs = array.codecs();
     let array_to_bytes_codec = codecs.array_to_bytes_codec();
-    let array_to_bytes_identifier = array_to_bytes_codec.identifier();
     let (
         chunk_shape,
         shard_shape,
         array_to_array_codecs,
         array_array_to_bytes_codec,
         bytes_to_bytes_codecs,
-    ) = if array_to_bytes_identifier == ShardingCodec::IDENTIFIER {
+    ) = if array_to_bytes_codec
+        .as_any()
+        .downcast_ref::<ShardingCodec>()
+        .is_some()
+    {
         let sharding_configuration = array_to_bytes_codec
-            .configuration(&CodecMetadataOptions::default())
+            .configuration_v3(&CodecMetadataOptions::default())
             .unwrap();
         // println!("{sharding_configuration:#?}");
         let chunk_shape: Vec<u64> =
@@ -536,10 +534,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
                     Codec::ArrayToArray(codec) => codec,
                     _ => panic!("Must be an array to array codec"),
                 };
-                codecs.push(NamedArrayToArrayCodec::new(
-                    metadata.name().to_string(),
-                    codec,
-                ));
+                codecs.push(codec);
             }
             codecs
         },
@@ -550,11 +545,10 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
         array_array_to_bytes_codec,
         |array_codec| {
             let metadata = MetadataV3::try_from(array_codec.as_str()).unwrap();
-            let codec = match Codec::from_metadata(&metadata).unwrap() {
+            match Codec::from_metadata(&metadata).unwrap() {
                 Codec::ArrayToBytes(codec) => codec,
                 _ => panic!("Must be an array to bytes codec"),
-            };
-            NamedArrayToBytesCodec::new(metadata.name().to_string(), codec)
+            }
         },
     );
 
@@ -570,10 +564,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
                     Codec::BytesToBytes(codec) => codec,
                     _ => panic!("Must be a bytes to bytes codec"),
                 };
-                codecs.push(NamedBytesToBytesCodec::new(
-                    metadata.name().to_string(),
-                    codec,
-                ));
+                codecs.push(codec);
             }
             codecs
         },
@@ -605,11 +596,11 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
     }
 
     let data_type = if let Some(data_type) = &encoding_args.data_type {
-        let data_type = NamedDataType::try_from(data_type).unwrap();
+        let data_type = DataType::from_metadata(data_type).unwrap();
         array_builder.data_type(data_type.clone());
         data_type
     } else {
-        array.named_data_type().clone()
+        array.data_type().clone()
     };
 
     if let Some(dimension_names) = encoding_args.dimension_names.clone() {
@@ -619,11 +610,11 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
 
     if let Some(fill_value) = &encoding_args.fill_value {
         // An explicit fill value was supplied
-        let fill_value = data_type.fill_value_from_metadata(fill_value).unwrap();
+        let fill_value = data_type.fill_value_v3(fill_value).unwrap();
         array_builder.fill_value(fill_value);
     } else if let Some(data_type) = &encoding_args.data_type {
         // The data type was changed, but no fill value supplied, so just cast it
-        let data_type = NamedDataType::try_from(data_type).unwrap();
+        let data_type = DataType::from_metadata(data_type).unwrap();
         let fill_value = convert_fill_value(array.data_type(), array.fill_value(), &data_type);
         array_builder.fill_value(fill_value);
     }
@@ -635,7 +626,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
             Arc::<BytesCodec>::default(),
             vec![Arc::new(Crc32cCodec::new())],
         ));
-        let inner_codecs = Arc::new(CodecChain::new_named(
+        let inner_codecs = Arc::new(CodecChain::new(
             array_to_array_codecs,
             array_to_bytes_codec,
             bytes_to_bytes_codecs,
@@ -653,9 +644,9 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
         )));
         array_builder.bytes_to_bytes_codecs(vec![]);
     } else {
-        array_builder.array_to_array_codecs_named(array_to_array_codecs);
-        array_builder.array_to_bytes_codec_named(array_to_bytes_codec);
-        array_builder.bytes_to_bytes_codecs_named(bytes_to_bytes_codecs);
+        array_builder.array_to_array_codecs(array_to_array_codecs);
+        array_builder.array_to_bytes_codec(array_to_bytes_codec);
+        array_builder.bytes_to_bytes_codecs(bytes_to_bytes_codecs);
     }
 
     array_builder
@@ -776,7 +767,7 @@ pub fn do_reencode(
     };
 
     let indices = chunks.indices();
-    if array_in.data_type().identifier() == array_out.data_type().identifier() {
+    if array_in.data_type() == array_out.data_type() {
         iter_concurrent_limit!(
             chunks_concurrent_limit,
             indices,
@@ -921,17 +912,15 @@ fn convert_fill_value(
     macro_rules! apply_inner {
         ( $type_in:ty, [$( ( $dt_type_out:ty, $type_out:ty ) ),* ]) => {
             {
-                let dt_id = data_type_out.identifier();
-                $(if dt_id == <$dt_type_out>::IDENTIFIER { convert!($type_in, $type_out) } else)*
-                { panic!("Unsupported output data type: {}", data_type_out.identifier()) }
+                $(if data_type_out.is::<$dt_type_out>() { convert!($type_in, $type_out) } else)*
+                { panic!("Unsupported output data type: {:?}", data_type_out) }
             }
         };
     }
     macro_rules! apply_outer {
         ([$( ( $dt_type_in:ty, $type_in:ty ) ),* ]) => {
             {
-                let dt_id = data_type_in.identifier();
-                $(if dt_id == <$dt_type_in>::IDENTIFIER {
+                $(if data_type_in.is::<$dt_type_in>() {
                     apply_inner!($type_in, [
                         (data_type::BoolDataType, u8),
                         (data_type::Int8DataType, i8),
@@ -948,7 +937,7 @@ fn convert_fill_value(
                         (data_type::Float64DataType, f64)
                     ])
                 } else)*
-                { panic!("Unsupported input data type: {}", data_type_in.identifier()) }
+                { panic!("Unsupported input data type: {:?}", data_type_in) }
             }
         };
     }

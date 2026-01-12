@@ -2,8 +2,9 @@ use half::{bf16, f16};
 use num_traits::AsPrimitive;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use zarrs::{
-    array::{data_type, Array, ArrayError, ArrayIndicesTinyVec, ArraySubset, ElementOwned},
-    plugin::ExtensionIdentifier,
+    array::{
+        data_type, Array, ArrayError, ArrayIndicesTinyVec, ArraySubset, DataTypeExt, ElementOwned,
+    },
     storage::ReadableStorageTraits,
 };
 
@@ -14,44 +15,33 @@ pub fn calculate_histogram<TStorage: ReadableStorageTraits + 'static>(
     max: f64,
     chunk_limit: usize,
 ) -> Result<(Vec<f64>, Vec<u64>), ArrayError> {
-    match array.data_type().identifier() {
-        data_type::Int8DataType::IDENTIFIER => {
-            calculate_histogram_t::<_, i8>(array, n_bins, min, max, chunk_limit)
-        }
-        data_type::Int16DataType::IDENTIFIER => {
-            calculate_histogram_t::<_, i16>(array, n_bins, min, max, chunk_limit)
-        }
-        data_type::Int32DataType::IDENTIFIER => {
-            calculate_histogram_t::<_, i32>(array, n_bins, min, max, chunk_limit)
-        }
-        data_type::Int64DataType::IDENTIFIER => {
-            calculate_histogram_t::<_, i64>(array, n_bins, min, max, chunk_limit)
-        }
-        data_type::UInt8DataType::IDENTIFIER => {
-            calculate_histogram_t::<_, u8>(array, n_bins, min, max, chunk_limit)
-        }
-        data_type::UInt16DataType::IDENTIFIER => {
-            calculate_histogram_t::<_, u16>(array, n_bins, min, max, chunk_limit)
-        }
-        data_type::UInt32DataType::IDENTIFIER => {
-            calculate_histogram_t::<_, u32>(array, n_bins, min, max, chunk_limit)
-        }
-        data_type::UInt64DataType::IDENTIFIER => {
-            calculate_histogram_t::<_, u64>(array, n_bins, min, max, chunk_limit)
-        }
-        data_type::Float16DataType::IDENTIFIER => {
-            calculate_histogram_t::<_, f16>(array, n_bins, min, max, chunk_limit)
-        }
-        data_type::BFloat16DataType::IDENTIFIER => {
-            calculate_histogram_t::<_, bf16>(array, n_bins, min, max, chunk_limit)
-        }
-        data_type::Float32DataType::IDENTIFIER => {
-            calculate_histogram_t::<_, f32>(array, n_bins, min, max, chunk_limit)
-        }
-        data_type::Float64DataType::IDENTIFIER => {
-            calculate_histogram_t::<_, f64>(array, n_bins, min, max, chunk_limit)
-        }
-        id => unimplemented!("Data type not supported: {}", id),
+    let dt = array.data_type();
+    if dt.is::<data_type::Int8DataType>() {
+        calculate_histogram_t::<_, i8>(array, n_bins, min, max, chunk_limit)
+    } else if dt.is::<data_type::Int16DataType>() {
+        calculate_histogram_t::<_, i16>(array, n_bins, min, max, chunk_limit)
+    } else if dt.is::<data_type::Int32DataType>() {
+        calculate_histogram_t::<_, i32>(array, n_bins, min, max, chunk_limit)
+    } else if dt.is::<data_type::Int64DataType>() {
+        calculate_histogram_t::<_, i64>(array, n_bins, min, max, chunk_limit)
+    } else if dt.is::<data_type::UInt8DataType>() {
+        calculate_histogram_t::<_, u8>(array, n_bins, min, max, chunk_limit)
+    } else if dt.is::<data_type::UInt16DataType>() {
+        calculate_histogram_t::<_, u16>(array, n_bins, min, max, chunk_limit)
+    } else if dt.is::<data_type::UInt32DataType>() {
+        calculate_histogram_t::<_, u32>(array, n_bins, min, max, chunk_limit)
+    } else if dt.is::<data_type::UInt64DataType>() {
+        calculate_histogram_t::<_, u64>(array, n_bins, min, max, chunk_limit)
+    } else if dt.is::<data_type::Float16DataType>() {
+        calculate_histogram_t::<_, f16>(array, n_bins, min, max, chunk_limit)
+    } else if dt.is::<data_type::BFloat16DataType>() {
+        calculate_histogram_t::<_, bf16>(array, n_bins, min, max, chunk_limit)
+    } else if dt.is::<data_type::Float32DataType>() {
+        calculate_histogram_t::<_, f32>(array, n_bins, min, max, chunk_limit)
+    } else if dt.is::<data_type::Float64DataType>() {
+        calculate_histogram_t::<_, f64>(array, n_bins, min, max, chunk_limit)
+    } else {
+        unimplemented!("Data type not supported: {:?}", dt)
     }
 }
 

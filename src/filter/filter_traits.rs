@@ -3,9 +3,10 @@ use std::num::NonZeroU64;
 use zarrs::{
     array::{
         data_type::DataTypeFillValueError, Array, ArrayBuilder, ArrayShape, DataType, FillValue,
-        NamedDataType,
     },
     filesystem::FilesystemStore,
+    metadata::v3::MetadataV3,
+    plugin::{ExtensionName, ZarrVersion},
 };
 
 use crate::{
@@ -13,6 +14,19 @@ use crate::{
 };
 
 use super::filter_error::FilterError;
+
+/// Convert a DataType to MetadataV3 for serialization.
+fn data_type_to_metadata(data_type: &DataType) -> MetadataV3 {
+    let name = data_type
+        .name(ZarrVersion::V3)
+        .expect("data type should have V3 name");
+    let configuration = data_type.configuration_v3();
+    if configuration.is_empty() {
+        MetadataV3::new(name.into_owned())
+    } else {
+        MetadataV3::new_with_configuration(name.into_owned(), configuration)
+    }
+}
 
 /// A tuple representing chunk information: (shape, data_type, fill_value)
 pub type ChunkInfo<'a> = (&'a [NonZeroU64], &'a DataType, &'a FillValue);
@@ -36,12 +50,12 @@ pub trait FilterTraits {
         None
     }
 
-    /// Returns a [`NamedDataType`] and [`FillValue`] if the filter changes the data type.
+    /// Returns a [`DataType`] and [`FillValue`] if the filter changes the data type.
     #[allow(unused_variables)]
     fn output_data_type(
         &self,
         array_input: &Array<FilesystemStore>,
-    ) -> Option<(NamedDataType, FillValue)> {
+    ) -> Option<(DataType, FillValue)> {
         None
     }
 
@@ -54,7 +68,7 @@ pub trait FilterTraits {
 
         if let Some(data_type) = &reencoding_args.data_type {
             // Use explicitly set data type
-            let data_type = NamedDataType::try_from(data_type).unwrap();
+            let data_type = DataType::from_metadata(data_type).unwrap();
             if reencoding_args.fill_value.is_none() {
                 // Convert fill value to new data type if no explicit fill value set
                 reencoding_args.fill_value =
@@ -64,10 +78,10 @@ pub trait FilterTraits {
                         &data_type,
                     ))?);
             }
-            reencoding_args.data_type = Some(data_type.metadata());
+            reencoding_args.data_type = Some(data_type_to_metadata(&data_type));
         } else if let Some((data_type, fill_value)) = self.output_data_type(array_input) {
             // Use auto data type/fill value from filter, if defined
-            reencoding_args.data_type = Some(data_type.metadata());
+            reencoding_args.data_type = Some(data_type_to_metadata(&data_type));
             reencoding_args.fill_value = Some(data_type.metadata_fill_value(&fill_value)?);
         }
 
@@ -125,7 +139,7 @@ impl<T: FilterTraits + ?Sized> FilterTraits for Box<T> {
     fn output_data_type(
         &self,
         array_input: &Array<FilesystemStore>,
-    ) -> Option<(NamedDataType, FillValue)> {
+    ) -> Option<(DataType, FillValue)> {
         (**self).output_data_type(array_input)
     }
 

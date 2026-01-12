@@ -18,11 +18,10 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
     array::{
         codec::array_to_bytes::sharding::ShardingCodec, codec::ArrayCodecTraits, data_type, Array,
-        ArrayIndicesTinyVec, ArrayMetadata, ArraySubset, Element, ElementOwned,
+        ArrayIndicesTinyVec, ArrayMetadata, ArraySubset, DataTypeExt, Element, ElementOwned,
     },
     filesystem::{FilesystemStore, FilesystemStoreOptions},
     group::{Group, GroupMetadata, GroupMetadataV3},
-    plugin::ExtensionIdentifier,
     storage::{StorePrefix, WritableStorageTraits},
 };
 use zarrs_tools::{
@@ -579,7 +578,12 @@ fn run() -> Result<(), anyhow::Error> {
         let chunk_shape = array_input.chunk_shape(&vec![0; array_input.dimensionality()])?;
         let output_shape = downsample_filter.output_shape(&array_input).unwrap();
         let mut reencoding = ZarrReencodingArgs::default();
-        if array_input.codecs().array_to_bytes_codec().identifier() == ShardingCodec::IDENTIFIER {
+        if array_input
+            .codecs()
+            .array_to_bytes_codec()
+            .as_any()
+            .is::<ShardingCodec>()
+        {
             reencoding.shard_shape = Some(
                 std::iter::zip(&chunk_shape, &output_shape)
                     .map(|(c, s)| std::cmp::min(c.get(), *s))
@@ -752,9 +756,10 @@ fn run() -> Result<(), anyhow::Error> {
                 }
                 macro_rules! apply {
                     ( [$( ( $dt:ty, $t:ty, $inner:ident ) ),* ]) => {
-                        match array_input.data_type().identifier() {
-                            $(<$dt>::IDENTIFIER => { $inner!($t) } ,)*
-                            id => panic!("unsupported data type: {}", id)
+                        {
+                            let dt = array_input.data_type();
+                            $(if dt.is::<$dt>() { $inner!($t) } else)*
+                            { panic!("unsupported data type: {:?}", dt) }
                         }
                     };
                 }

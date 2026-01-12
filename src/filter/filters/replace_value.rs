@@ -2,9 +2,10 @@ use clap::Parser;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataTypeExt, FillValueMetadataV3},
+    array::{data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataType, DataTypeExt},
     filesystem::FilesystemStore,
-    plugin::ExtensionIdentifier,
+    metadata::FillValueMetadata,
+    plugin::ZarrVersion,
 };
 
 use crate::{
@@ -32,7 +33,7 @@ pub struct ReplaceValueArguments {
     ///   float: 0.0 "NaN" "Infinity" "-Infinity"
     ///   r*: "[0, 255]"
     #[arg(allow_hyphen_values(true), value_parser = parse_fill_value)]
-    pub value: FillValueMetadataV3,
+    pub value: FillValueMetadata,
     /// The replacement value.
     ///
     /// The value must be compatible with the data type.
@@ -42,7 +43,7 @@ pub struct ReplaceValueArguments {
     ///   float: 0.0 "NaN" "Infinity" "-Infinity"
     ///   r*: "[0, 255]"
     #[arg(allow_hyphen_values(true), value_parser = parse_fill_value)]
-    pub replace: FillValueMetadataV3,
+    pub replace: FillValueMetadata,
 }
 
 impl FilterArguments for ReplaceValueArguments {
@@ -63,15 +64,15 @@ impl FilterArguments for ReplaceValueArguments {
 }
 
 pub struct ReplaceValue {
-    value: FillValueMetadataV3,
-    replace: FillValueMetadataV3,
+    value: FillValueMetadata,
+    replace: FillValueMetadata,
     chunk_limit: Option<usize>,
 }
 
 impl ReplaceValue {
     pub fn new(
-        value: FillValueMetadataV3,
-        replace: FillValueMetadataV3,
+        value: FillValueMetadata,
+        replace: FillValueMetadata,
         chunk_limit: Option<usize>,
     ) -> Self {
         Self {
@@ -101,12 +102,12 @@ impl ReplaceValue {
 
         // Get original fill values
         let value_fv = input
-            .named_data_type()
-            .fill_value_from_metadata(&self.value)
+            .data_type()
+            .fill_value(&self.value, ZarrVersion::V3)
             .expect("value not compatible with input");
         let replace_fv = output
-            .named_data_type()
-            .fill_value_from_metadata(&self.replace)
+            .data_type()
+            .fill_value(&self.replace, ZarrVersion::V3)
             .expect("replace not compatible with output");
 
         macro_rules! type_list {
@@ -137,13 +138,14 @@ impl ReplaceValue {
         // Convert fill value from array's data type to intermediate type
         macro_rules! convert_fv {
             ($intermediate:ty, $fv:expr, $array:expr, [$( ( $dt:ty, $t:ty ) ),* ]) => {
-                match $array.data_type().identifier() {
-                    $(<$dt>::IDENTIFIER => {
+                {
+                    let dt = $array.data_type();
+                    $(if dt.is::<$dt>() {
                         let v = <$t>::from_ne_bytes($fv.as_ne_bytes().try_into().unwrap());
                         let converted: $intermediate = v.as_();
                         converted.to_ne_bytes().to_vec()
-                    },)*
-                    id => return Err(UnsupportedDataTypeError::from(id.to_string()).into()),
+                    } else)*
+                    { return Err(UnsupportedDataTypeError::from(format!("{:?}", dt)).into()); }
                 }
             };
         }
@@ -201,32 +203,31 @@ impl ReplaceValue {
     }
 }
 
+fn is_supported_type(dt: &DataType) -> bool {
+    dt.is::<data_type::BoolDataType>()
+        || dt.is::<data_type::Int8DataType>()
+        || dt.is::<data_type::Int16DataType>()
+        || dt.is::<data_type::Int32DataType>()
+        || dt.is::<data_type::Int64DataType>()
+        || dt.is::<data_type::UInt8DataType>()
+        || dt.is::<data_type::UInt16DataType>()
+        || dt.is::<data_type::UInt32DataType>()
+        || dt.is::<data_type::UInt64DataType>()
+        || dt.is::<data_type::Float16DataType>()
+        || dt.is::<data_type::Float32DataType>()
+        || dt.is::<data_type::Float64DataType>()
+        || dt.is::<data_type::BFloat16DataType>()
+}
+
 impl FilterTraits for ReplaceValue {
     fn is_compatible(
         &self,
         chunk_input: ChunkInfo,
         chunk_output: ChunkInfo,
     ) -> Result<(), FilterError> {
-        const SUPPORTED_TYPES: &[&str] = &[
-            data_type::BoolDataType::IDENTIFIER,
-            data_type::Int8DataType::IDENTIFIER,
-            data_type::Int16DataType::IDENTIFIER,
-            data_type::Int32DataType::IDENTIFIER,
-            data_type::Int64DataType::IDENTIFIER,
-            data_type::UInt8DataType::IDENTIFIER,
-            data_type::UInt16DataType::IDENTIFIER,
-            data_type::UInt32DataType::IDENTIFIER,
-            data_type::UInt64DataType::IDENTIFIER,
-            data_type::Float16DataType::IDENTIFIER,
-            data_type::Float32DataType::IDENTIFIER,
-            data_type::Float64DataType::IDENTIFIER,
-            data_type::BFloat16DataType::IDENTIFIER,
-        ];
-        for data_type in [chunk_input.1, chunk_output.1] {
-            if !SUPPORTED_TYPES.contains(&data_type.identifier()) {
-                Err(UnsupportedDataTypeError::from(
-                    data_type.identifier().to_string(),
-                ))?;
+        for dt in [chunk_input.1, chunk_output.1] {
+            if !is_supported_type(dt) {
+                Err(UnsupportedDataTypeError::from(format!("{:?}", dt)))?;
             }
         }
         Ok(())

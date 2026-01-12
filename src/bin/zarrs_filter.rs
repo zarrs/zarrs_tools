@@ -12,6 +12,7 @@ use tempfile::TempDir;
 use zarrs::{
     array::{Array, ArrayBuilder, ArrayCreateError},
     filesystem::{FilesystemStore, FilesystemStoreOptions},
+    plugin::ZarrVersion,
     storage::{StorageError, StorePrefix, WritableStorageTraits},
 };
 use zarrs_tools::{
@@ -113,7 +114,22 @@ fn get_array_input_output(
     let array_input = load_array(input, direct_io)?;
     let array_output = create_array(
         output,
-        &filter.output_array_builder(&array_input, reencode)?,
+        &filter
+            .output_array_builder(&array_input, reencode)
+            .map_err(|_| ArrayCreateError::InvalidFillValue {
+                data_type_name: reencode
+                    .data_type
+                    .as_ref()
+                    .map(|metadata| metadata.name().to_string())
+                    .unwrap_or_else(|| {
+                        array_input
+                            .data_type()
+                            .name_v3()
+                            .expect("data type has V3 name")
+                            .to_string()
+                    }),
+                fill_value: array_input.fill_value().clone(),
+            })?,
         direct_io,
     )?;
     Ok((array_input, array_output))
@@ -286,10 +302,10 @@ fn run() -> Result<(), Box<dyn Error>> {
             filter_command.name(),
             filter_command.args_str(),
             filter_command.reencode_str(),
-            array_input.data_type().identifier(),
+            array_input.data_type().name(ZarrVersion::V3).expect("V3 data type name"),
             array_input.shape(),
             input.path(),
-            array_output.data_type().identifier(),
+            array_output.data_type().name(ZarrVersion::V3).expect("V3 data type name"),
             array_output.shape(),
             output.path(),
             if *exists { " (overwrite)" } else { "" },
