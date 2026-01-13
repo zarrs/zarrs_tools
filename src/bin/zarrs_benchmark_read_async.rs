@@ -7,8 +7,8 @@ use clap::Parser;
 use futures::{FutureExt, StreamExt};
 use zarrs::{
     array::{
-        codec::CodecOptions, ArrayBytes, ArrayShardedExt, ArraySubset,
-        AsyncArrayShardedReadableExt, AsyncArrayShardedReadableExtCache,
+        ArrayBytes, ArrayShardedExt, ArraySubset, AsyncArrayShardedReadableExt,
+        AsyncArrayShardedReadableExtCache, CodecOptions,
     },
     storage::AsyncReadableStorage,
 };

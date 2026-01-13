@@ -294,9 +294,9 @@ dependencies = [
 
 [[package]]
 name = "clap_lex"
-version = "0.7.6"
+version = "0.7.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1d728cc89cf3aee9ff92b05e62b19ee65a02b5702cff7d5a377e32c6ae29d8d"
+checksum = "c3e64b0cc0439b12df2fa678eae89a1c56a529fd067a9115f7827f1fffd22b32"
 
 [[package]]
 name = "colorchoice"
@@ -2030,9 +2030,9 @@ dependencies = [
 
 [[package]]
 name = "tower"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d039ad9159c98b70ecfd540b2573b97f7f52c3e8d9f8ad57a24b916a536975f9"
+checksum = "ebe5ef63511595f1344e2d5cfa636d973292adc0eec1f0ad45fae9f0851ab1d4"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -2581,9 +2581,9 @@ dependencies = [
 
 [[package]]
 name = "zarrs"
-version = "0.23.0-beta.5"
+version = "0.23.0-beta.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83d6763cb9998683b409946d026fb0a2b7f735750cb43537ab17cb09c960bc02"
+checksum = "389bb39a88441cc093442dee359b75c1e368cdc376197e4787baceee68547293"
 dependencies = [
  "async-generic",
  "async-lock",
@@ -2619,6 +2619,8 @@ dependencies = [
  "unsafe_cell_slice",
  "uuid",
  "zarrs_chunk_grid",
+ "zarrs_chunk_key_encoding",
+ "zarrs_codec",
  "zarrs_data_type",
  "zarrs_filesystem",
  "zarrs_metadata",
@@ -2630,9 +2632,9 @@ dependencies = [
 
 [[package]]
 name = "zarrs_chunk_grid"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "009622b9bf402e654cfebbd01c411f9f42968deb4df4a6d64e9c152d3d099788"
+checksum = "82ea3fe24797859a973e1ec68f5caa51c1a1d168c2d76ba6a0701b697539d38e"
 dependencies = [
  "derive_more",
  "inventory",
@@ -2645,15 +2647,52 @@ dependencies = [
 ]
 
 [[package]]
-name = "zarrs_data_type"
-version = "0.8.0"
+name = "zarrs_chunk_key_encoding"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c14ab62fb439d239d46a3310b067ff98ca45f006e51a70b652210b84080d545"
+checksum = "ca7ef1c5b20b650297b9ad03ee323ce60944a610e0a67b14f2841ac421c25f52"
+dependencies = [
+ "derive_more",
+ "inventory",
+ "zarrs_metadata",
+ "zarrs_plugin",
+ "zarrs_storage",
+]
+
+[[package]]
+name = "zarrs_codec"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5994385959475d10240fd1b167a077cb0d299ccbeba4014b3549e9b1b1ed70a3"
+dependencies = [
+ "async-trait",
+ "bytemuck",
+ "derive_more",
+ "futures",
+ "inventory",
+ "itertools",
+ "rayon",
+ "thiserror",
+ "unsafe_cell_slice",
+ "zarrs_chunk_grid",
+ "zarrs_data_type",
+ "zarrs_metadata",
+ "zarrs_plugin",
+ "zarrs_storage",
+]
+
+[[package]]
+name = "zarrs_data_type"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8069ec249682cd0bcb0ee82b7cfeef3553a549aeea2245145d13c78ee393f017"
 dependencies = [
  "derive_more",
  "half",
  "inventory",
  "num",
+ "serde",
+ "serde_json",
  "thiserror",
  "zarrs_metadata",
  "zarrs_plugin",
@@ -2854,9 +2893,9 @@ dependencies = [
 
 [[package]]
 name = "zmij"
-version = "1.0.13"
+version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac93432f5b761b22864c774aac244fa5c0fd877678a4c37ebf6cf42208f9c9ec"
+checksum = "bd8f3f50b848df28f887acb68e41201b5aea6bc8a8dacc00fb40635ff9a72fea"
 
 [[package]]
 name = "zstd"

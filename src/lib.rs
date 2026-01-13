@@ -20,16 +20,13 @@ use serde::{Deserialize, Serialize};
 use zarrs::{
     array::{
         chunk_grid::RegularChunkGrid,
-        codec::{
-            array_to_bytes::sharding, ArrayCodecTraits, ArrayToBytesCodecTraits, BytesCodec, Codec,
-            CodecMetadataOptions, CodecOptions, Crc32cCodec, ShardingCodec,
-        },
-        concurrency::RecommendedConcurrency,
-        data_type, Array, ArrayBuilder, ArrayError, ArrayIndicesTinyVec, ArrayShardedExt,
-        ArraySubset, ChunkCache, ChunkCacheDecodedLruChunkLimit,
-        ChunkCacheDecodedLruChunkLimitThreadLocal, ChunkCacheDecodedLruSizeLimit,
-        ChunkCacheDecodedLruSizeLimitThreadLocal, ChunkShape, CodecChain, DataType, DataTypeExt,
-        DimensionName, FillValue, IncompatibleDimensionalityError,
+        codec::{BytesCodec, Crc32cCodec, ShardingCodec, ShardingIndexLocation},
+        data_type, Array, ArrayBuilder, ArrayCodecTraits, ArrayError, ArrayIndicesTinyVec,
+        ArrayShardedExt, ArraySubset, ArrayToBytesCodecTraits, ChunkCache,
+        ChunkCacheDecodedLruChunkLimit, ChunkCacheDecodedLruChunkLimitThreadLocal,
+        ChunkCacheDecodedLruSizeLimit, ChunkCacheDecodedLruSizeLimitThreadLocal, ChunkShape, Codec,
+        CodecChain, CodecMetadataOptions, CodecOptions, DataType, DimensionName, FillValue,
+        IncompatibleDimensionalityError, RecommendedConcurrency,
     },
     config::global_config,
     metadata::{v3::MetadataV3, FillValueMetadata},
@@ -262,7 +259,7 @@ pub fn get_array_builder(
             chunk_shape_nonzero,
             inner_codecs,
             index_codecs,
-            sharding::ShardingIndexLocation::End,
+            ShardingIndexLocation::End,
         )));
     } else {
         array_builder.array_to_array_codecs(array_to_array_codecs);
@@ -640,7 +637,7 @@ pub fn get_array_builder_reencode<TStorage: ?Sized>(
             chunk_shape_nonzero,
             inner_codecs,
             index_codecs,
-            sharding::ShardingIndexLocation::End,
+            ShardingIndexLocation::End,
         )));
         array_builder.bytes_to_bytes_codecs(vec![]);
     } else {
@@ -775,7 +772,7 @@ pub fn do_reencode(
             |chunk_indices: ArrayIndicesTinyVec| {
                 let chunk_subset = array_out.chunk_subset(&chunk_indices).unwrap();
                 if let Some(write_shape) = &write_shape {
-                    use zarrs::array::chunk_grid::ChunkGridTraits;
+                    use zarrs::array::ChunkGridTraits;
                     let write_grid =
                         RegularChunkGrid::new(chunk_subset.shape().to_vec(), write_shape.clone())
                             .map_err(|_| {
@@ -835,7 +832,7 @@ pub fn do_reencode(
         let convert_data = |chunk_indices: ArrayIndicesTinyVec| {
             let chunk_subset = array_out.chunk_subset(&chunk_indices).unwrap();
             if let Some(write_shape) = &write_shape {
-                use zarrs::array::chunk_grid::ChunkGridTraits;
+                use zarrs::array::ChunkGridTraits;
                 let write_grid =
                     RegularChunkGrid::new(chunk_subset.shape().to_vec(), write_shape.clone())
                         .map_err(|_| {

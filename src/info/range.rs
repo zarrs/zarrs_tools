@@ -2,9 +2,7 @@ use half::{bf16, f16};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon_iter_concurrent_limit::iter_concurrent_limit;
 use zarrs::{
-    array::{
-        data_type, Array, ArrayError, ArrayIndicesTinyVec, ArraySubset, DataTypeExt, ElementOwned,
-    },
+    array::{data_type, Array, ArrayError, ArrayIndicesTinyVec, ArraySubset, ElementOwned},
     storage::ReadableStorageTraits,
 };
 

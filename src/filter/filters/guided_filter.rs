@@ -4,7 +4,7 @@ use rayon::iter::{
 };
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataType, DataTypeExt},
+    array::{data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataType},
     filesystem::FilesystemStore,
 };
 

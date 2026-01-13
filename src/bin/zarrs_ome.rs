@@ -17,8 +17,8 @@ use ome_zarr_metadata::v0_5::{
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
     array::{
-        codec::array_to_bytes::sharding::ShardingCodec, codec::ArrayCodecTraits, data_type, Array,
-        ArrayIndicesTinyVec, ArrayMetadata, ArraySubset, DataTypeExt, Element, ElementOwned,
+        codec::array_to_bytes::sharding::ShardingCodec, data_type, Array, ArrayCodecTraits,
+        ArrayIndicesTinyVec, ArrayMetadata, ArraySubset, Element, ElementOwned,
     },
     filesystem::{FilesystemStore, FilesystemStoreOptions},
     group::{Group, GroupMetadata, GroupMetadataV3},

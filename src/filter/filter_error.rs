@@ -1,6 +1,6 @@
 use thiserror::Error;
 use zarrs::{
-    array::{data_type::DataTypeFillValueMetadataError, ArrayCreateError, ArrayError},
+    array::{data_type::api::DataTypeFillValueMetadataError, ArrayCreateError, ArrayError},
     storage::StorageError,
 };
 

@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use num_traits::AsPrimitive;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
-    array::{data_type, Array, ArrayError, ArraySubset, DataType, DataTypeExt},
+    array::{data_type, Array, ArrayError, ArraySubset, DataType},
     storage::{ReadableStorageTraits, ReadableWritableStorageTraits},
 };
 
@@ -61,6 +61,7 @@ pub enum IntermediateType {
 impl IntermediateType {
     /// Select the best intermediate type for the given data type.
     pub fn for_data_type(data_type: &DataType) -> Self {
+        #[allow(clippy::if_same_then_else)]
         if data_type.is::<data_type::Float64DataType>() {
             IntermediateType::F64
         } else if data_type.is::<data_type::Float32DataType>()

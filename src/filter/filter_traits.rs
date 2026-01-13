@@ -2,7 +2,8 @@ use std::num::NonZeroU64;
 
 use zarrs::{
     array::{
-        data_type::DataTypeFillValueError, Array, ArrayBuilder, ArrayShape, DataType, FillValue,
+        data_type::api::DataTypeFillValueError, Array, ArrayBuilder, ArrayShape, DataType,
+        FillValue,
     },
     filesystem::FilesystemStore,
     metadata::v3::MetadataV3,

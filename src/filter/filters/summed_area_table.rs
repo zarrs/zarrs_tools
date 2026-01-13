@@ -6,10 +6,7 @@ use num_traits::{AsPrimitive, Zero};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use zarrs::{
-    array::{
-        data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataType, DataTypeExt, Element,
-        ElementOwned,
-    },
+    array::{data_type, Array, ArrayIndicesTinyVec, ArraySubset, DataType, Element, ElementOwned},
     filesystem::FilesystemStore,
 };
 

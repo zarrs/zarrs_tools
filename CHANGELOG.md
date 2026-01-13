@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Breaking**: Bump MSRV to 1.88
 - Switch to `mimalloc` as the global allocator
-- Bump `zarrs` to 0.23.0-beta.2
+- Bump `zarrs` to 0.23.0-beta.6
 - Reduce monomorphisation
 - Bump `sysinfo` to 0.37.2
 

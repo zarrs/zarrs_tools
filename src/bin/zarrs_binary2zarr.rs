@@ -7,9 +7,8 @@ use zarrs_tools::{get_array_builder, ZarrEncodingArgs};
 
 use zarrs::{
     array::{
-        codec::{ArrayCodecTraits, CodecOptions},
-        concurrency::RecommendedConcurrency,
-        data_type, Array, ArraySubset, DataType, DataTypeExt, Endianness,
+        data_type, Array, ArrayCodecTraits, ArraySubset, CodecOptions, DataType, Endianness,
+        RecommendedConcurrency,
     },
     config::global_config,
     filesystem::{FilesystemStore, FilesystemStoreOptions},

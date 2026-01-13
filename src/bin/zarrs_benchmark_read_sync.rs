@@ -7,8 +7,8 @@ use clap::Parser;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use zarrs::{
     array::{
-        codec::CodecOptions, ArrayBytes, ArrayIndicesTinyVec, ArrayShardedExt,
-        ArrayShardedReadableExt, ArrayShardedReadableExtCache, ArraySubset,
+        ArrayBytes, ArrayIndicesTinyVec, ArrayShardedExt, ArrayShardedReadableExt,
+        ArrayShardedReadableExtCache, ArraySubset, CodecOptions,
     },
     filesystem::{FilesystemStore, FilesystemStoreOptions},
     storage::ReadableStorage,
