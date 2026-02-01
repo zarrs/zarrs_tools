@@ -18,7 +18,7 @@ install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
 # Which actions to run on pull requests
-pr-run-mode = "plan"
+pr-run-mode = "upload"
 # Publish jobs to run in CI
 publish-jobs = ["./publish"]
 
@@ -29,7 +29,7 @@ global = "ubuntu-latest"
 # runner = "ubuntu-latest"
 
 [dist.github-custom-runners.aarch64-pc-windows-msvc]
-runner = "ubuntu-latest"
+runner = "windows-11-arm"
 
 [dist.github-custom-runners.x86_64-unknown-linux-gnu]
 runner = "ubuntu-latest"
@@ -38,5 +38,4 @@ container = { image = "quay.io/pypa/manylinux_2_28_x86_64", host = "x86_64-unkno
 [dist.github-custom-runners.x86_64-pc-windows-msvc]
 runner = "windows-latest"
 
-[dist.dependencies.apt]
-llvm-dev = { version = "*", targets = ["aarch64-pc-windows-msvc"] }
+
