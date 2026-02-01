@@ -2790,7 +2790,7 @@ dependencies = [
 
 [[package]]
 name = "zarrs_tools"
-version = "0.8.0-dev"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "approx",
