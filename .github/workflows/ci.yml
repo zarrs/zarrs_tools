@@ -13,7 +13,7 @@ jobs:
   build:
     strategy:
       matrix:
-        toolchain: ["stable", "1.88"]
+        toolchain: ["stable", "1.91"]
         features: ["--features \"\"", "--all-features", "--no-default-features"]
     runs-on: ubuntu-latest
     steps:
