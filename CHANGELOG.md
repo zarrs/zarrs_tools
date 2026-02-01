@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-02-02
+
+### Fixed
+- switch to `windows-11-arm` runner for `aarch64-pc-windows-msvc` builds
+
 ## [0.8.0] - 2026-02-02
 
 ### Changed
@@ -331,7 +336,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
  - Initial public release
 
-[unreleased]: https://github.com/zarrs/zarrs_tools/compare/v0.8.0...HEAD
+[unreleased]: https://github.com/zarrs/zarrs_tools/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.8.1
 [0.8.0]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.8.0
 [0.7.9]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.9
 [0.7.8]: https://github.com/LDeakin/zarrs_tools/releases/tag/v0.7.8
