@@ -17,15 +17,17 @@ use progress::{Progress, ProgressCallback};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon_iter_concurrent_limit::iter_concurrent_limit;
 use serde::{Deserialize, Serialize};
+use zarrs::array::chunk_cache::{
+    ChunkCache, ChunkCacheDecodedLruChunkLimit, ChunkCacheDecodedLruChunkLimitThreadLocal,
+    ChunkCacheDecodedLruSizeLimit, ChunkCacheDecodedLruSizeLimitThreadLocal,
+};
 use zarrs::{
     array::{
         chunk_grid::RegularChunkGrid,
         codec::{BytesCodec, Crc32cCodec, ShardingCodec, ShardingIndexLocation},
         data_type, Array, ArrayBuilder, ArrayCodecTraits, ArrayError, ArrayIndicesTinyVec,
-        ArrayShardedExt, ArraySubset, ArrayToBytesCodecTraits, ChunkCache,
-        ChunkCacheDecodedLruChunkLimit, ChunkCacheDecodedLruChunkLimitThreadLocal,
-        ChunkCacheDecodedLruSizeLimit, ChunkCacheDecodedLruSizeLimitThreadLocal, ChunkShape, Codec,
-        CodecChain, CodecMetadataOptions, CodecOptions, DataType, DimensionName, FillValue,
+        ArrayShardedExt, ArraySubset, ArrayToBytesCodecTraits, ChunkShape, Codec, CodecChain,
+        CodecMetadataOptions, CodecOptions, DataType, DimensionName, FillValue,
         IncompatibleDimensionalityError, RecommendedConcurrency,
     },
     config::global_config,

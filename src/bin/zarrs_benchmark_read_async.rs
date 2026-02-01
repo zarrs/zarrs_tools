@@ -87,9 +87,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         bytes_decoded += array_data.size();
     } else if let (Some(inner_chunk_shape), true) =
-        (array.effective_inner_chunk_shape(), args.inner_chunks)
+        (array.effective_subchunk_shape(), args.inner_chunks)
     {
-        let inner_chunks = ArraySubset::new_with_shape(array.inner_chunk_grid_shape().clone());
+        let inner_chunks = ArraySubset::new_with_shape(array.subchunk_grid_shape().clone());
         let inner_chunk_indices = inner_chunks.indices();
         let (chunk_concurrent_limit, codec_concurrent_target) =
             calculate_chunk_and_codec_concurrency(
@@ -113,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let shard_index_cache = shard_index_cache.clone();
                 async move {
                     array
-                        .async_retrieve_inner_chunk_opt(
+                        .async_retrieve_subchunk_opt(
                             &shard_index_cache,
                             &inner_chunk_indices,
                             &codec_options,

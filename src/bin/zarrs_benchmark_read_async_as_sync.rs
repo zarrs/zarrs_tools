@@ -102,9 +102,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .retrieve_array_subset::<ArrayBytes>(&array.subset_all())?
             .size();
     } else if let (Some(inner_chunk_shape), true) =
-        (array.effective_inner_chunk_shape(), args.inner_chunks)
+        (array.effective_subchunk_shape(), args.inner_chunks)
     {
-        let inner_chunks = ArraySubset::new_with_shape(array.inner_chunk_grid_shape().clone());
+        let inner_chunks = ArraySubset::new_with_shape(array.subchunk_grid_shape().clone());
         let inner_chunk_indices = inner_chunks.indices();
         let (chunks_concurrent_limit, codec_concurrent_target) =
             calculate_chunk_and_codec_concurrency(
@@ -125,11 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             |inner_chunk_indices: ArrayIndicesTinyVec| {
                 // println!("Chunk/shard: {:?}", chunk_indices);
                 let bytes: ArrayBytes = array
-                    .retrieve_inner_chunk_opt(
-                        &shard_index_cache,
-                        &inner_chunk_indices,
-                        &codec_options,
-                    )
+                    .retrieve_subchunk_opt(&shard_index_cache, &inner_chunk_indices, &codec_options)
                     .unwrap();
                 *bytes_decoded.lock().unwrap() += bytes.size();
             }
